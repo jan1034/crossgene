@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "compare-genes"
+version = "0.1.0"
+description = "Compare two gene sequences via fragment alignment and produce similarity profiles"
+requires-python = ">=3.10"
+dependencies = [
+    "click",
+    "pysam",
+    "numpy",
+    "pyBigWig",
+    "pycirclize",
+    "gtfparse",
+    "matplotlib",
+]
+
+[project.scripts]
+compare-genes = "compare_genes.cli:main"
