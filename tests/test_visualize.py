@@ -42,13 +42,19 @@ class TestHelpers:
         gene = _make_gene("TP53", "chr17", 0, 100, "-")
         assert _strand_label(gene) == "TP53 (-)"
 
-    def test_mapq_to_alpha_range(self):
-        assert _mapq_to_alpha(0, 60) == pytest.approx(0.2)
-        assert _mapq_to_alpha(60, 60) == pytest.approx(1.0)
-        assert _mapq_to_alpha(30, 60) == pytest.approx(0.6)
+    def test_mapq_to_alpha_few_hits(self):
+        # With <= 50 hits, density_factor=1.0, so base alpha unchanged
+        assert _mapq_to_alpha(0, 60, 10) == pytest.approx(0.2)
+        assert _mapq_to_alpha(60, 60, 10) == pytest.approx(1.0)
+        assert _mapq_to_alpha(30, 60, 10) == pytest.approx(0.6)
+
+    def test_mapq_to_alpha_many_hits(self):
+        # With 1000 hits, density_factor=0.1
+        assert _mapq_to_alpha(60, 60, 1000) == pytest.approx(0.1)
+        assert _mapq_to_alpha(30, 60, 1000) == pytest.approx(0.06)
 
     def test_mapq_to_alpha_zero_max(self):
-        assert _mapq_to_alpha(0, 0) == pytest.approx(0.6)
+        assert _mapq_to_alpha(0, 0, 10) == pytest.approx(0.6)
 
     def test_subsample(self):
         hits = [_make_hit(0, 50, 0, 50, score=i) for i in range(10)]

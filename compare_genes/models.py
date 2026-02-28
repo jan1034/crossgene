@@ -27,6 +27,8 @@ class GeneRecord:
     strand: str  # '+' or '-' (original strand from GTF)
     sequence: str = ""  # sense sequence (revcomp applied if minus strand)
     features: list[GeneFeature] = field(default_factory=list)
+    gene_body_start: int = -1  # original gene start before flanking (-1 = not set)
+    gene_body_end: int = -1  # original gene end before flanking (-1 = not set)
 
 
 @dataclass

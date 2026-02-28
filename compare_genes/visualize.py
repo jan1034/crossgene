@@ -24,6 +24,7 @@ FEATURE_COLORS: dict[str, str] = {
     "three_prime_utr": "goldenrod",
 }
 _FALLBACK_FEATURE_COLOR = "grey"
+COLOR_FLANKING = "lavender"
 
 
 def _strand_label(gene: GeneRecord) -> str:
@@ -31,11 +32,27 @@ def _strand_label(gene: GeneRecord) -> str:
     return f"{gene.name} ({gene.strand})"
 
 
-def _mapq_to_alpha(mapq: int, max_mapq: int) -> float:
-    """Normalize mapq to alpha range [0.2, 1.0]."""
+def _mapq_to_alpha(mapq: int, max_mapq: int, num_hits: int) -> float:
+    """Normalize mapq to alpha, scaled down by hit count for density visibility.
+
+    Base alpha from mapq is in [0.2, 1.0], then scaled by a density factor
+    so overlapping arcs accumulate rather than saturate.
+    """
     if max_mapq <= 0:
-        return 0.6
-    return 0.2 + 0.8 * min(mapq, max_mapq) / max_mapq
+        base = 0.6
+    else:
+        base = 0.2 + 0.8 * min(mapq, max_mapq) / max_mapq
+
+    if num_hits <= 50:
+        density_factor = 1.0
+    elif num_hits <= 500:
+        density_factor = 0.3
+    elif num_hits <= 5000:
+        density_factor = 0.1
+    else:
+        density_factor = 0.05
+
+    return max(0.02, base * density_factor)
 
 
 def _subsample_hits(
@@ -97,6 +114,18 @@ def create_circlize_plot(
         else:
             gene = gene_b
 
+        # Draw flanking region bands if present
+        has_flanking = False
+        if gene.gene_body_start >= 0 and gene.gene_body_start > gene.start:
+            flank_end = gene.gene_body_start - gene.start
+            track.rect(0, flank_end, fc=COLOR_FLANKING, ec="none", lw=0)
+            has_flanking = True
+        if gene.gene_body_end >= 0 and gene.gene_body_end < gene.end:
+            flank_start = gene.gene_body_end - gene.start
+            flank_end = gene.end - gene.start
+            track.rect(flank_start, flank_end, fc=COLOR_FLANKING, ec="none", lw=0)
+            has_flanking = True
+
         # Draw feature annotations if available
         for feat in gene.features:
             local_start = feat.start - gene.start
@@ -141,7 +170,7 @@ def create_circlize_plot(
         b_local_end = max(0, min(b_local_end, gene_b_len))
 
         color = COLOR_ANTISENSE if hit.strand == "-" else COLOR_SAME_SENSE
-        alpha = _mapq_to_alpha(hit.mapq, max_mapq)
+        alpha = _mapq_to_alpha(hit.mapq, max_mapq, len(hits_ab))
 
         circos.link(
             (label_a, a_local_start, a_local_end),
@@ -157,6 +186,13 @@ def create_circlize_plot(
         mpatches.Patch(color=COLOR_SAME_SENSE, label="Same-sense alignment"),
         mpatches.Patch(color=COLOR_ANTISENSE, label="Antisense alignment"),
     ]
+    # Add flanking legend entry if any flanking regions were drawn
+    any_flanking = any(
+        g.gene_body_start >= 0 and (g.gene_body_start > g.start or g.gene_body_end < g.end)
+        for g in (gene_a, gene_b)
+    )
+    if any_flanking:
+        handles.append(mpatches.Patch(color=COLOR_FLANKING, label="Flanking region"))
     # Collect feature types actually drawn (from both genes)
     drawn_types: set[str] = set()
     for gene in (gene_a, gene_b):

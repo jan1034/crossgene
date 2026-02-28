@@ -127,10 +127,12 @@ def _run_direction(
 @click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
+@click.option("--flanking", default=0, show_default=True, help="Flanking region size in bp (upstream + downstream)")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
-         sensitive, divergent, annotation_gtf, annotation_features, transcript_mode, verbose):
+         sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
+         flanking, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
@@ -177,8 +179,10 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
         rec_b.name, rec_b.chrom, rec_b.start, rec_b.end, rec_b.strand,
     )
 
-    rec_a = extract_sequence(rec_a, genome)
-    rec_b = extract_sequence(rec_b, genome)
+    if flanking > 0:
+        logger.info("Flanking region: %d bp upstream + downstream", flanking)
+    rec_a = extract_sequence(rec_a, genome, flanking=flanking)
+    rec_b = extract_sequence(rec_b, genome, flanking=flanking)
 
     # Load sub-gene features from annotation GTF (for plot output)
     if "plot" in formats and annotation_gtf and os.path.exists(annotation_gtf):

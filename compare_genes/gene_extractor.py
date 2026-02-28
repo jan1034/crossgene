@@ -177,21 +177,43 @@ def load_features(
         strand=gene.strand,
         sequence=gene.sequence,
         features=features,
+        gene_body_start=gene.gene_body_start,
+        gene_body_end=gene.gene_body_end,
     )
 
 
-def extract_sequence(gene: GeneRecord, genome_path: str) -> GeneRecord:
+def extract_sequence(gene: GeneRecord, genome_path: str, flanking: int = 0) -> GeneRecord:
     """Extract the gene sequence from a genome FASTA.
 
     Fetches chrom:start-end using pysam (0-based half-open coords).
     For minus-strand genes, reverse-complements the sequence to produce
     the sense strand.
 
+    If flanking > 0, expands the extraction region by that many bp
+    upstream and downstream (clamped to chromosome bounds). The original
+    gene boundaries are stored in gene_body_start / gene_body_end.
+
     Returns a new GeneRecord with the sequence populated.
     """
     fa = pysam.FastaFile(genome_path)
     try:
-        seq = fa.fetch(gene.chrom, gene.start, gene.end)
+        gene_body_start = gene.start
+        gene_body_end = gene.end
+
+        if flanking > 0:
+            chrom_len = fa.get_reference_length(gene.chrom)
+            flanked_start = max(0, gene.start - flanking)
+            flanked_end = min(chrom_len, gene.end + flanking)
+            logger.info(
+                "Flanking %d bp: %s:%d-%d -> %s:%d-%d",
+                flanking, gene.chrom, gene.start, gene.end,
+                gene.chrom, flanked_start, flanked_end,
+            )
+        else:
+            flanked_start = gene.start
+            flanked_end = gene.end
+
+        seq = fa.fetch(gene.chrom, flanked_start, flanked_end)
     finally:
         fa.close()
 
@@ -202,9 +224,11 @@ def extract_sequence(gene: GeneRecord, genome_path: str) -> GeneRecord:
         name=gene.name,
         gene_id=gene.gene_id,
         chrom=gene.chrom,
-        start=gene.start,
-        end=gene.end,
+        start=flanked_start,
+        end=flanked_end,
         strand=gene.strand,
         sequence=seq,
         features=gene.features,
+        gene_body_start=gene_body_start,
+        gene_body_end=gene_body_end,
     )
