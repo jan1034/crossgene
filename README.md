@@ -1,6 +1,6 @@
 # Compare Genes
 
-A Python CLI tool for comparing two gene sequences by fragment alignment. It fragments one gene with a rolling window, aligns the fragments to another gene using [minimap2](https://github.com/lh3/minimap2), and produces similarity profiles, detailed hit tables, and circular visualizations. The comparison runs bidirectionally (A→B and B→A).
+A Python CLI tool for comparing two gene sequences by fragment alignment. It fragments one gene with a rolling window, aligns the fragments to another gene using [minimap2](https://github.com/lh3/minimap2) or [BLASTN](https://blast.ncbi.nlm.nih.gov/), and produces similarity profiles, detailed hit tables, and circular visualizations. The comparison runs bidirectionally (A→B and B→A).
 
 ## Outputs
 
@@ -21,7 +21,8 @@ BigWig files use real genomic coordinates and can be loaded directly into IGV.
 ### Prerequisites
 
 - Python 3.10+
-- [minimap2](https://github.com/lh3/minimap2) on PATH
+- [minimap2](https://github.com/lh3/minimap2) on PATH (default aligner)
+- [BLAST+](https://blast.ncbi.nlm.nih.gov/) on PATH (optional, for `--aligner blastn`)
 - Reference data (genome FASTA, GTF annotations, chromosome sizes)
 
 ### Install
@@ -29,7 +30,7 @@ BigWig files use real genomic coordinates and can be loaded directly into IGV.
 ```bash
 conda create -n compare_genes python=3.11
 conda activate compare_genes
-conda install -c bioconda minimap2
+conda install -c bioconda minimap2 blast
 
 git clone <repository-url>
 cd compare_genes
@@ -64,6 +65,18 @@ These paths are configurable via CLI flags (see below).
 compare-genes --gene-a BRCA1 --gene-b BRCA2
 ```
 
+### Using BLASTN (for divergent paralogs)
+
+BLASTN provides better sensitivity for divergent paralogs (70–90% identity) where minimap2 may miss hits:
+
+```bash
+compare-genes \
+  --gene-a HSP90AB1 \
+  --gene-b HSP90AA1 \
+  --aligner blastn \
+  --divergent
+```
+
 ### With custom parameters
 
 ```bash
@@ -88,13 +101,15 @@ compare-genes \
 | Step size | `--step-size` | 1 | Step between fragments in bp |
 | Min quality | `--min-quality` | 30 | Minimum identity (0–100) to report a hit |
 | Max secondary | `--max-secondary` | 10 | Max secondary alignments per fragment |
+| Aligner | `--aligner` | `minimap2` | Alignment engine: `minimap2` or `blastn` |
 | Genome FASTA | `--genome` | `references/homo_sapiens.109.mainChr.fa` | Path to genome FASTA |
 | GTF | `--gtf` | `references/homo_sapiens.109.genes.gtf` | Path to gene annotation GTF |
 | Chrom sizes | `--chrom-sizes` | `references/homo_sapiens.109.chrom.sizes` | Chromosome sizes file |
 | Output dir | `--outdir` | `.` | Output directory |
 | Output formats | `--output-formats` | `bigwig,tsv,plot` | Comma-separated: `bigwig`, `tsv`, `plot` |
 | minimap2 preset | `--minimap2-preset` | `auto` | Override minimap2 preset (auto selects `-x sr` for fragments <=200 bp) |
-| Sensitive mode | `--sensitive` | off | Tune minimap2 for short fragments (<=50 bp): uses `-k 11 -w 5` |
+| Sensitive mode | `--sensitive` | off | Tune aligner for moderate divergence |
+| Divergent mode | `--divergent` | off | Tune aligner for high divergence / paralogs (mutually exclusive with `--sensitive`) |
 | Verbose | `--verbose` / `-v` | off | Enable debug logging |
 
 ## How It Works
@@ -105,15 +120,24 @@ compare-genes \
 
 2. **Fragmentation** — Creates overlapping fragments using a rolling window (`--fragment-size` and `--step-size`).
 
-3. **Alignment** — Aligns fragments to the target gene sequence using minimap2 (PAF output).
+3. **Alignment** — Aligns fragments to the target gene sequence using minimap2 (PAF output) or BLASTN (tabular output).
 
-4. **Parsing** — Parses PAF output and translates fragment-local and target-local coordinates back to genomic coordinates.
+4. **Parsing** — Parses aligner output and translates fragment-local and target-local coordinates back to genomic coordinates. For BLASTN, MAPQ is derived from bitscore: `min(60, bitscore / max_bitscore * 60)`.
 
 5. **Scoring** — For each base in the query gene, computes a mappability score (0–100) by averaging the best alignment identity across all overlapping fragments.
 
 6. **Output** — Writes BigWig tracks, TSV hit tables, and a circular visualization.
 
 Steps 2–6 run in both directions (A→B and B→A).
+
+### Choosing an aligner
+
+| Aligner | Best for | Notes |
+|---------|----------|-------|
+| `minimap2` (default) | Highly similar genes, fast runtime | Struggles with divergent paralogs (70–90% identity) |
+| `blastn` | Divergent paralogs, homology detection | Better sensitivity at lower identity; slower due to `makeblastdb` step |
+
+Both aligners support `--sensitive` and `--divergent` flags, which adjust internal parameters (seed size, scoring, e-value thresholds) for increased sensitivity. `--minimap2-preset` is ignored when using `--aligner blastn`.
 
 ### Similarity score
 
@@ -154,7 +178,9 @@ compare_genes/
 │   ├── gene_extractor.py   # GTF lookup + FASTA extraction
 │   ├── fragment.py          # Rolling window fragmentation
 │   ├── align.py             # minimap2 wrapper
+│   ├── blastn.py            # BLASTN wrapper
 │   ├── parser.py            # PAF parsing + coordinate translation
+│   ├── parser_blast.py      # BLAST tabular parsing + coordinate translation
 │   ├── scores.py            # Per-base score aggregation
 │   ├── bigwig.py            # BigWig writer
 │   ├── tsv_writer.py        # TSV output

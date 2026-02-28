@@ -12,9 +12,11 @@ import click
 from compare_genes import __version__
 from compare_genes.align import AlignParams, align_fragments, check_minimap2, write_target_fasta
 from compare_genes.bigwig import write_bigwig
+from compare_genes.blastn import BlastParams, align_fragments_blastn, check_blastn
 from compare_genes.fragment import generate_fragments
 from compare_genes.gene_extractor import extract_sequence, load_features, lookup_gene
 from compare_genes.parser import parse_paf
+from compare_genes.parser_blast import parse_blast_tabular
 from compare_genes.scores import compute_scores
 from compare_genes.tsv_writer import write_tsv
 from compare_genes.visualize import create_circlize_plot
@@ -44,7 +46,7 @@ def _parse_formats(output_formats: str) -> set[str]:
 
 def _run_direction(
     query_gene, target_gene, fragment_size, step_size, min_quality,
-    align_params, chrom_sizes, outdir, formats, direction_label,
+    align_params, chrom_sizes, outdir, formats, direction_label, aligner="minimap2",
 ) -> tuple[list, list[Path]]:
     """Run one direction of the comparison pipeline. Returns (hits, temp_files)."""
     temp_files: list[Path] = []
@@ -60,14 +62,30 @@ def _run_direction(
     target_path = write_target_fasta(target_gene)
     temp_files.append(target_path)
 
-    logger.info("Aligning fragments to %s...", target_gene.name)
-    paf_path = align_fragments(frags_path, target_path, align_params)
-    temp_files.append(paf_path)
+    if aligner == "blastn":
+        logger.info("Aligning fragments to %s with BLASTN...", target_gene.name)
+        blast_params = BlastParams(
+            fragment_size=fragment_size,
+            max_secondary=align_params.max_secondary,
+            sensitive=align_params.sensitive,
+            divergent=align_params.divergent,
+        )
+        tsv_path, db_files = align_fragments_blastn(frags_path, target_path, blast_params)
+        temp_files.extend(db_files)
+        temp_files.append(tsv_path)
+        hits = parse_blast_tabular(
+            tsv_path, query_gene, target_gene,
+            fragment_size, step_size, min_quality, direction_label,
+        )
+    else:
+        logger.info("Aligning fragments to %s with minimap2...", target_gene.name)
+        paf_path = align_fragments(frags_path, target_path, align_params)
+        temp_files.append(paf_path)
+        hits = parse_paf(
+            paf_path, query_gene, target_gene,
+            fragment_size, step_size, min_quality, direction_label,
+        )
 
-    hits = parse_paf(
-        paf_path, query_gene, target_gene,
-        fragment_size, step_size, min_quality, direction_label,
-    )
     logger.info("Found %d hits passing quality filter", len(hits))
 
     if not hits:
@@ -102,19 +120,20 @@ def _run_direction(
 @click.option("--chrom-sizes", default="references/homo_sapiens.109.chrom.sizes", show_default=True, help="Chromosome sizes file")
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
 @click.option("--output-formats", default="bigwig,tsv,plot", show_default=True, help="Comma-separated: bigwig,tsv,plot")
+@click.option("--aligner", default="minimap2", show_default=True, type=click.Choice(["minimap2", "blastn"]), help="Alignment engine")
 @click.option("--minimap2-preset", default="auto", show_default=True, help="minimap2 preset (auto selects based on fragment size)")
-@click.option("--sensitive", is_flag=True, default=False, help="Tune minimap2 for moderate divergence (k=9, relaxed scoring)")
-@click.option("--divergent", is_flag=True, default=False, help="Tune minimap2 for high divergence / paralogs (k=7, aggressive seeding)")
+@click.option("--sensitive", is_flag=True, default=False, help="Tune aligner for moderate divergence")
+@click.option("--divergent", is_flag=True, default=False, help="Tune aligner for high divergence / paralogs")
 @click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
-         genome, gtf, chrom_sizes, outdir, output_formats, minimap2_preset,
+         genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
          sensitive, divergent, annotation_gtf, annotation_features, transcript_mode, verbose):
     """Compare two gene sequences by fragment alignment.
 
-    Fragments one gene, aligns to another using minimap2, and produces
+    Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
     similarity profiles (BigWig), hit tables (TSV), and circular visualizations.
     Runs bidirectional comparison (A->B and B->A).
     """
@@ -125,9 +144,12 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     # Parse and validate output formats
     formats = _parse_formats(output_formats)
 
-    # Validate inputs
+    # Validate aligner
     try:
-        check_minimap2()
+        if aligner == "blastn":
+            check_blastn()
+        else:
+            check_minimap2()
     except RuntimeError as e:
         raise click.ClickException(str(e))
 
@@ -183,14 +205,14 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     # Direction A→B
     hits_ab, temps = _run_direction(
         rec_a, rec_b, fragment_size, step_size, min_quality,
-        align_params, chrom_sizes, outdir, formats, "A→B",
+        align_params, chrom_sizes, outdir, formats, "A→B", aligner,
     )
     all_temp_files.extend(temps)
 
     # Direction B→A
     hits_ba, temps = _run_direction(
         rec_b, rec_a, fragment_size, step_size, min_quality,
-        align_params, chrom_sizes, outdir, formats, "B→A",
+        align_params, chrom_sizes, outdir, formats, "B→A", aligner,
     )
     all_temp_files.extend(temps)
 
