@@ -6,6 +6,7 @@ import logging
 
 import matplotlib
 matplotlib.use("Agg")  # non-interactive backend for PDF output
+import matplotlib.patches as mpatches
 
 from pycirclize import Circos
 
@@ -16,8 +17,13 @@ logger = logging.getLogger(__name__)
 # Colors
 COLOR_SAME_SENSE = "steelblue"
 COLOR_ANTISENSE = "firebrick"
-COLOR_EXON = "orange"
-COLOR_CDS = "forestgreen"
+FEATURE_COLORS: dict[str, str] = {
+    "exon": "orange",
+    "CDS": "forestgreen",
+    "five_prime_utr": "mediumpurple",
+    "three_prime_utr": "goldenrod",
+}
+_FALLBACK_FEATURE_COLOR = "grey"
 
 
 def _strand_label(gene: GeneRecord) -> str:
@@ -95,7 +101,7 @@ def create_circlize_plot(
         for feat in gene.features:
             local_start = feat.start - gene.start
             local_end = feat.end - gene.start
-            fc = COLOR_CDS if feat.feature_type == "CDS" else COLOR_EXON
+            fc = FEATURE_COLORS.get(feat.feature_type, _FALLBACK_FEATURE_COLOR)
             track.rect(local_start, local_end, fc=fc, ec="none", lw=0)
 
         # Sector label
@@ -145,5 +151,39 @@ def create_circlize_plot(
         )
 
     fig = circos.plotfig()
+
+    # Build legend
+    handles = [
+        mpatches.Patch(color=COLOR_SAME_SENSE, label="Same-sense alignment"),
+        mpatches.Patch(color=COLOR_ANTISENSE, label="Antisense alignment"),
+    ]
+    # Collect feature types actually drawn (from both genes)
+    drawn_types: set[str] = set()
+    for gene in (gene_a, gene_b):
+        for feat in gene.features:
+            drawn_types.add(feat.feature_type)
+    # Add feature entries in a stable order
+    for ft in ("exon", "CDS", "five_prime_utr", "three_prime_utr"):
+        if ft in drawn_types:
+            handles.append(mpatches.Patch(
+                color=FEATURE_COLORS.get(ft, _FALLBACK_FEATURE_COLOR),
+                label=ft.replace("_", " "),
+            ))
+            drawn_types.discard(ft)
+    # Any remaining unknown feature types
+    for ft in sorted(drawn_types):
+        handles.append(mpatches.Patch(
+            color=FEATURE_COLORS.get(ft, _FALLBACK_FEATURE_COLOR),
+            label=ft.replace("_", " "),
+        ))
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        ncol=len(handles),
+        bbox_to_anchor=(0.5, -0.02),
+        fontsize=8,
+        frameon=False,
+    )
+
     fig.savefig(output_path, bbox_inches="tight")
     logger.info("Saved circlize plot to %s", output_path)

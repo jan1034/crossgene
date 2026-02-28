@@ -6,6 +6,7 @@ import pytest
 
 from compare_genes.models import AlignmentHit, GeneFeature, GeneRecord
 from compare_genes.visualize import (
+    FEATURE_COLORS,
     _mapq_to_alpha,
     _strand_label,
     _subsample_hits,
@@ -105,3 +106,59 @@ class TestCreateCirclizePlot:
 
         assert os.path.exists(output)
         assert os.path.getsize(output) > 0
+
+
+class TestLegend:
+    """Verify legend presence and entries in generated figures."""
+
+    def _get_legend(self, tmp_path, gene_a, gene_b, hits):
+        """Helper: create plot and return the figure legend."""
+        import matplotlib.pyplot as plt
+        output = str(tmp_path / "legend_test.pdf")
+        create_circlize_plot(hits, gene_a, gene_b, output)
+        fig = plt.gcf()
+        legends = fig.legends
+        return legends
+
+    def test_legend_present_no_features(self, tmp_path):
+        """Legend should exist with alignment entries even without features."""
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
+        hits = [_make_hit(100, 150, 200, 250)]
+
+        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
+        assert len(legends) == 1
+        labels = [t.get_text() for t in legends[0].get_texts()]
+        assert "Same-sense alignment" in labels
+        assert "Antisense alignment" in labels
+        # No feature entries when no features drawn
+        assert "exon" not in labels
+        assert "CDS" not in labels
+
+    def test_legend_includes_drawn_features(self, tmp_path):
+        """Legend should include entries for feature types that are drawn."""
+        features_a = [
+            GeneFeature("exon", 100, 200, {}),
+            GeneFeature("CDS", 150, 200, {}),
+        ]
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
+        hits = [_make_hit(100, 150, 200, 250)]
+
+        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
+        labels = [t.get_text() for t in legends[0].get_texts()]
+        assert "exon" in labels
+        assert "CDS" in labels
+
+    def test_legend_no_phantom_entries(self, tmp_path):
+        """Legend should not include feature types that aren't drawn."""
+        features_a = [GeneFeature("exon", 100, 200, {})]
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
+        hits = [_make_hit(100, 150, 200, 250)]
+
+        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
+        labels = [t.get_text() for t in legends[0].get_texts()]
+        assert "exon" in labels
+        assert "CDS" not in labels
+        assert "five prime utr" not in labels

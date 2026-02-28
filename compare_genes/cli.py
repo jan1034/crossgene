@@ -13,7 +13,7 @@ from compare_genes import __version__
 from compare_genes.align import AlignParams, align_fragments, check_minimap2, write_target_fasta
 from compare_genes.bigwig import write_bigwig
 from compare_genes.fragment import generate_fragments
-from compare_genes.gene_extractor import extract_sequence, lookup_gene
+from compare_genes.gene_extractor import extract_sequence, load_features, lookup_gene
 from compare_genes.parser import parse_paf
 from compare_genes.scores import compute_scores
 from compare_genes.tsv_writer import write_tsv
@@ -103,11 +103,15 @@ def _run_direction(
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
 @click.option("--output-formats", default="bigwig,tsv,plot", show_default=True, help="Comma-separated: bigwig,tsv,plot")
 @click.option("--minimap2-preset", default="auto", show_default=True, help="minimap2 preset (auto selects based on fragment size)")
-@click.option("--sensitive", is_flag=True, default=False, help="Tune minimap2 for short fragments (<=50bp)")
+@click.option("--sensitive", is_flag=True, default=False, help="Tune minimap2 for moderate divergence (k=9, relaxed scoring)")
+@click.option("--divergent", is_flag=True, default=False, help="Tune minimap2 for high divergence / paralogs (k=7, aggressive seeding)")
+@click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
+@click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
+@click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, gtf, chrom_sizes, outdir, output_formats, minimap2_preset,
-         sensitive, verbose):
+         sensitive, divergent, annotation_gtf, annotation_features, transcript_mode, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2, and produces
@@ -154,11 +158,24 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     rec_a = extract_sequence(rec_a, genome)
     rec_b = extract_sequence(rec_b, genome)
 
+    # Load sub-gene features from annotation GTF (for plot output)
+    if "plot" in formats and annotation_gtf and os.path.exists(annotation_gtf):
+        feature_types = {f.strip() for f in annotation_features.split(",")}
+        logger.info("Loading gene annotations from %s...", annotation_gtf)
+        rec_a = load_features(rec_a, annotation_gtf, transcript_mode, feature_types)
+        rec_b = load_features(rec_b, annotation_gtf, transcript_mode, feature_types)
+    elif "plot" in formats and annotation_gtf and not os.path.exists(annotation_gtf):
+        logger.warning("Annotation GTF not found: %s — plot will have no gene features", annotation_gtf)
+
+    if sensitive and divergent:
+        raise click.ClickException("--sensitive and --divergent are mutually exclusive")
+
     align_params = AlignParams(
         fragment_size=fragment_size,
         max_secondary=max_secondary,
         minimap2_preset=minimap2_preset,
         sensitive=sensitive,
+        divergent=divergent,
     )
 
     all_temp_files: list[Path] = []

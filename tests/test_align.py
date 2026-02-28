@@ -64,9 +64,41 @@ class TestBuildCommand:
         cmd = _build_command(frags, target, output, params)
 
         assert "-k" in cmd
-        assert "11" in cmd
+        assert "9" in cmd
         assert "-w" in cmd
-        assert "5" in cmd
+        assert "3" in cmd
+        assert "-A" in cmd
+        assert "-B" in cmd
+        assert "-m" in cmd
+        assert "-s" in cmd
+
+    def test_divergent_mode(self, tmp_path):
+        frags = tmp_path / "frags.fa"
+        target = tmp_path / "target.fa"
+        output = tmp_path / "out.paf"
+        params = AlignParams(fragment_size=50, divergent=True)
+
+        cmd = _build_command(frags, target, output, params)
+
+        assert "-k" in cmd
+        assert "7" in cmd
+        assert "-w" in cmd
+        assert "2" in cmd
+        assert "-A" in cmd
+        assert "-B" in cmd
+        assert "-m" in cmd
+        assert "-s" in cmd
+
+    def test_divergent_overrides_sensitive(self, tmp_path):
+        """When divergent is set, its params should be used (not sensitive)."""
+        frags = tmp_path / "frags.fa"
+        target = tmp_path / "target.fa"
+        output = tmp_path / "out.paf"
+        params = AlignParams(fragment_size=50, divergent=True, sensitive=False)
+
+        cmd = _build_command(frags, target, output, params)
+        k_idx = cmd.index("-k")
+        assert cmd[k_idx + 1] == "7"
 
     def test_no_sensitive_by_default(self, tmp_path):
         frags = tmp_path / "frags.fa"

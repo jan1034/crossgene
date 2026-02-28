@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Compare Genes is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A).
 
-**Status:** Implementation in progress (Step 1 complete). See ANALYSIS.md, ARCHITECTURE.md, and IMPLEMENTATION.md.
+**Status:** Implementation in progress (Step 1 complete). See artifacts/ANALYSIS.md, artifacts/ARCHITECTURE.md, and artifacts/IMPLEMENTATION.md.
 
 ## Development Environment
 

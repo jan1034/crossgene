@@ -88,6 +88,98 @@ def lookup_gene(gene_name: str, gtf_path: str) -> GeneRecord:
     )
 
 
+def load_features(
+    gene: GeneRecord,
+    annotation_gtf_path: str,
+    transcript_mode: str = "canonical",
+    feature_types: set[str] | None = None,
+) -> GeneRecord:
+    """Load sub-gene features (exon, CDS, UTR, etc.) from an annotation GTF.
+
+    This is separate from lookup_gene() because the annotation GTF (mainChr.gtf)
+    is large (~2GB) and only needed when visualization is requested.
+
+    Args:
+        gene: GeneRecord with gene_id populated.
+        annotation_gtf_path: Path to full annotation GTF (e.g., mainChr.gtf).
+        transcript_mode: "canonical" to use only Ensembl_canonical transcript,
+                         "all" to use all transcripts (deduplicating by coords).
+        feature_types: Set of feature types to keep (default: {"exon", "CDS"}).
+
+    Returns:
+        New GeneRecord with features list populated.
+    """
+    if feature_types is None:
+        feature_types = {"exon", "CDS"}
+
+    df = gtfparse.read_gtf(annotation_gtf_path, result_type="pandas")
+
+    # Filter to this gene
+    gene_df = df[df["gene_id"] == gene.gene_id]
+
+    if len(gene_df) == 0:
+        logger.warning(
+            "No annotation rows found for gene_id '%s' in %s",
+            gene.gene_id, annotation_gtf_path,
+        )
+        return gene
+
+    if transcript_mode == "canonical":
+        # Find canonical transcript: look for rows with tag containing "Ensembl_canonical"
+        transcripts = gene_df[gene_df["feature"] == "transcript"]
+        if "tag" in transcripts.columns:
+            canonical = transcripts[
+                transcripts["tag"].str.contains("Ensembl_canonical", na=False)
+            ]
+            if len(canonical) > 0:
+                canonical_id = str(canonical.iloc[0]["transcript_id"])
+                logger.debug(
+                    "Using canonical transcript %s for %s",
+                    canonical_id, gene.name,
+                )
+                gene_df = gene_df[gene_df["transcript_id"] == canonical_id]
+            else:
+                logger.warning(
+                    "No Ensembl_canonical transcript found for %s, using all transcripts",
+                    gene.name,
+                )
+
+    # Filter by feature type
+    feat_df = gene_df[gene_df["feature"].isin(feature_types)]
+
+    # Convert to GeneFeature objects, deduplicating by (type, start, end)
+    seen: set[tuple[str, int, int]] = set()
+    features: list[GeneFeature] = []
+    for _, row in feat_df.iterrows():
+        ft = str(row["feature"])
+        # Convert GTF 1-based inclusive → 0-based half-open
+        start = int(row["start"]) - 1
+        end = int(row["end"])
+        key = (ft, start, end)
+        if key not in seen:
+            seen.add(key)
+            features.append(GeneFeature(feature_type=ft, start=start, end=end, metadata={}))
+
+    features.sort(key=lambda f: f.start)
+    logger.info(
+        "Loaded %d features (%s) for %s",
+        len(features),
+        ", ".join(sorted(feature_types)),
+        gene.name,
+    )
+
+    return GeneRecord(
+        name=gene.name,
+        gene_id=gene.gene_id,
+        chrom=gene.chrom,
+        start=gene.start,
+        end=gene.end,
+        strand=gene.strand,
+        sequence=gene.sequence,
+        features=features,
+    )
+
+
 def extract_sequence(gene: GeneRecord, genome_path: str) -> GeneRecord:
     """Extract the gene sequence from a genome FASTA.
 

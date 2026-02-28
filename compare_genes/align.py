@@ -22,6 +22,7 @@ class AlignParams:
     max_secondary: int = 10
     minimap2_preset: str = "auto"  # "auto", "sr", "map-ont", etc.
     sensitive: bool = False
+    divergent: bool = False
 
 
 def check_minimap2() -> None:
@@ -63,8 +64,16 @@ def _build_command(
 
     cmd.extend(_select_preset(params))
 
-    if params.sensitive:
-        cmd.extend(["-k", "11", "-w", "5"])
+    if params.divergent:
+        # Aggressive settings for paralog-level identity (70-90%):
+        # k=7 seeds at ~21% per position at 80% identity, -A2 -B2 tolerates
+        # mismatches in extension, -m10 allows shorter seed chains, -s30
+        # filters spurious short alignments.
+        cmd.extend(["-k", "7", "-w", "2", "-A", "2", "-B", "2", "-m", "10", "-s", "30"])
+    elif params.sensitive:
+        # Moderate sensitivity: k=9 seeds at ~13% per position at 80%
+        # identity, with relaxed scoring and chaining thresholds.
+        cmd.extend(["-k", "9", "-w", "3", "-A", "2", "-B", "2", "-m", "15", "-s", "30"])
 
     cmd.extend([
         "-o", str(output_paf),
