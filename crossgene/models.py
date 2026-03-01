@@ -6,6 +6,18 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class BedRegion:
+    """A region from a BED file."""
+
+    chrom: str
+    start: int  # 0-based
+    end: int  # exclusive
+    name: str = "."  # column 4
+    score: int = 0  # column 5
+    strand: str = "."  # column 6
+
+
+@dataclass
 class GeneFeature:
     """A genomic feature (exon, CDS, UTR, etc.) within a gene."""
 

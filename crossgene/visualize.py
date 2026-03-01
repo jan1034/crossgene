@@ -10,7 +10,9 @@ import matplotlib.patches as mpatches
 
 from pycirclize import Circos
 
-from crossgene.models import AlignmentHit, GeneRecord
+from dataclasses import dataclass
+
+from crossgene.models import AlignmentHit, BedRegion, GeneRecord
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,18 @@ FEATURE_COLORS: dict[str, str] = {
 }
 _FALLBACK_FEATURE_COLOR = "grey"
 COLOR_FLANKING = "lavender"
+
+BED_COLORS = ["darkorchid", "teal", "sienna"]
+
+
+@dataclass
+class BedTrackConfig:
+    """Configuration for a BED annotation track on the circular plot."""
+
+    label: str  # legend label (derived from filename stem)
+    color: str  # single color for all regions in this track
+    regions_a: list[BedRegion]  # regions overlapping Gene A (pre-clipped)
+    regions_b: list[BedRegion]  # regions overlapping Gene B (pre-clipped)
 
 
 def _strand_label(gene: GeneRecord) -> str:
@@ -71,6 +85,7 @@ def create_circlize_plot(
     gene_b: GeneRecord,
     output_path: str,
     max_arcs: int = 5000,
+    bed_tracks: list[BedTrackConfig] | None = None,
 ) -> None:
     """Create a circular comparison plot and save as PDF.
 
@@ -149,6 +164,31 @@ def create_circlize_plot(
             label_size=6,
         )
 
+    # Draw BED annotation tracks (inner rings)
+    if bed_tracks:
+        for i, bt in enumerate(bed_tracks[:3]):
+            r_high = 90 - i * 5
+            r_low = r_high - 5
+            for sector in circos.sectors:
+                if sector.name == label_a:
+                    bed_regions = bt.regions_a
+                    gene = gene_a
+                else:
+                    bed_regions = bt.regions_b
+                    gene = gene_b
+                gene_len = gene.end - gene.start
+                track = sector.add_track((r_low, r_high))
+                track.axis(fc="none", ec="grey", lw=0.3)
+                for region in bed_regions:
+                    local_start = region.start - gene.start
+                    local_end = region.end - gene.start
+                    track.rect(local_start, local_end, fc=bt.color, ec="none", lw=0)
+                    # Label if region is >= 1% of gene length
+                    region_len = local_end - local_start
+                    if region.name != "." and region_len >= gene_len * 0.01:
+                        mid = (local_start + local_end) / 2
+                        track.text(region.name, mid, size=5)
+
     # Draw arcs (links) between matching regions
     for hit in hits_ab:
         # Convert genomic coords to sector-local coords
@@ -206,6 +246,11 @@ def create_circlize_plot(
             color=FEATURE_COLORS.get(ft, _FALLBACK_FEATURE_COLOR),
             label=ft.replace("_", " "),
         ))
+    # Add BED track legend entries
+    if bed_tracks:
+        for bt in bed_tracks[:3]:
+            handles.append(mpatches.Patch(color=bt.color, label=bt.label))
+
     fig.legend(
         handles=handles,
         loc="lower center",

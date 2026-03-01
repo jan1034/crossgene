@@ -104,3 +104,37 @@ class TestCLI:
         # TSV should have a header + at least some hits
         tsv_lines = (outdir / "SYNTH_A_vs_SYNTH_B.hits.tsv").read_text().strip().splitlines()
         assert len(tsv_lines) >= 2  # header + at least 1 hit
+
+
+class TestBedCLI:
+    def test_bed_option_in_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--help"])
+        assert "--bed" in result.output
+        assert "--bed-color" in result.output
+
+    def test_error_more_than_3_beds(self, tmp_path):
+        beds = []
+        for i in range(4):
+            bed = tmp_path / f"bed{i}.bed"
+            bed.write_text(f"chr1\t{i*100}\t{i*100+50}\tR{i}\n")
+            beds.append(str(bed))
+        runner = CliRunner()
+        args = ["--gene-a", "X", "--gene-b", "Y"]
+        for b in beds:
+            args.extend(["--bed", b])
+        result = runner.invoke(main, args)
+        assert result.exit_code != 0
+        assert "3" in result.output
+
+    def test_error_more_colors_than_beds(self, tmp_path):
+        bed = tmp_path / "test.bed"
+        bed.write_text("chr1\t100\t200\tR1\n")
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "--gene-a", "X", "--gene-b", "Y",
+            "--bed", str(bed),
+            "--bed-color", "red", "--bed-color", "blue",
+        ])
+        assert result.exit_code != 0
+        assert "color" in result.output.lower()

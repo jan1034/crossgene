@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CrossGene is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A).
+CrossGene is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A). Supports BED file overlay on circular plots (`--bed`) for annotation of repeats, regulatory regions, etc.
 
 **Status:** Implementation in progress (Step 1 complete). See artifacts/ANALYSIS.md, artifacts/ARCHITECTURE.md, and artifacts/IMPLEMENTATION.md.
 
@@ -39,7 +39,8 @@ Ten modules in `crossgene/`:
 - `bigwig.py` — BigWig writer with real genomic coordinates (IGV-compatible)
 - `tsv_writer.py` — 15-column TSV output
 - `visualize.py` — Circlize circular plot
-- `models.py` — GeneRecord, GeneFeature, AlignmentHit dataclasses
+- `models.py` — GeneRecord, GeneFeature, AlignmentHit, BedRegion dataclasses
+- `bed_parser.py` — BED file parsing + region filtering/clipping
 
 ## Reference Data
 

@@ -5,9 +5,11 @@ import os
 import pytest
 
 from crossgene.models import AlignmentHit, GeneFeature, GeneRecord
+from crossgene.models import BedRegion
 from crossgene.visualize import (
+    BedTrackConfig,
     FEATURE_COLORS,
-    _mapq_to_alpha,
+    _identity_to_alpha,
     _strand_label,
     _subsample_hits,
     create_circlize_plot,
@@ -42,19 +44,20 @@ class TestHelpers:
         gene = _make_gene("TP53", "chr17", 0, 100, "-")
         assert _strand_label(gene) == "TP53 (-)"
 
-    def test_mapq_to_alpha_few_hits(self):
-        # With <= 50 hits, density_factor=1.0, so base alpha unchanged
-        assert _mapq_to_alpha(0, 60, 10) == pytest.approx(0.2)
-        assert _mapq_to_alpha(60, 60, 10) == pytest.approx(1.0)
-        assert _mapq_to_alpha(30, 60, 10) == pytest.approx(0.6)
+    def test_identity_to_alpha_few_hits(self):
+        # With <= 50 hits, density_factor=1.0, so base alpha = 0.1 + 0.9*identity
+        assert _identity_to_alpha(0.0, 10) == pytest.approx(0.1)
+        assert _identity_to_alpha(1.0, 10) == pytest.approx(1.0)
+        assert _identity_to_alpha(0.5, 10) == pytest.approx(0.55)
 
-    def test_mapq_to_alpha_many_hits(self):
+    def test_identity_to_alpha_many_hits(self):
         # With 1000 hits, density_factor=0.1
-        assert _mapq_to_alpha(60, 60, 1000) == pytest.approx(0.1)
-        assert _mapq_to_alpha(30, 60, 1000) == pytest.approx(0.06)
+        assert _identity_to_alpha(1.0, 1000) == pytest.approx(0.1)
+        assert _identity_to_alpha(0.5, 1000) == pytest.approx(0.055)
 
-    def test_mapq_to_alpha_zero_max(self):
-        assert _mapq_to_alpha(0, 0, 10) == pytest.approx(0.6)
+    def test_identity_to_alpha_zero_identity(self):
+        # identity=0 → base=0.1, density=1.0 → 0.1
+        assert _identity_to_alpha(0.0, 10) == pytest.approx(0.1)
 
     def test_subsample(self):
         hits = [_make_hit(0, 50, 0, 50, score=i) for i in range(10)]
@@ -168,3 +171,61 @@ class TestLegend:
         assert "exon" in labels
         assert "CDS" not in labels
         assert "five prime utr" not in labels
+
+
+class TestBedTracks:
+    """Tests for BED annotation track rendering."""
+
+    def test_plot_with_one_bed_track(self, tmp_path):
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
+        hits = [_make_hit(100, 150, 200, 250)]
+        bt = BedTrackConfig(
+            label="repeats",
+            color="darkorchid",
+            regions_a=[BedRegion("chr1", 100, 300, "AluSc")],
+            regions_b=[BedRegion("chr2", 200, 400, "L1")],
+        )
+        output = str(tmp_path / "test.pdf")
+        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=[bt])
+        assert os.path.exists(output)
+        assert os.path.getsize(output) > 0
+
+    def test_plot_with_three_bed_tracks(self, tmp_path):
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
+        hits = [_make_hit(100, 150, 200, 250)]
+        tracks = [
+            BedTrackConfig(label=f"track{i}", color=c,
+                           regions_a=[BedRegion("chr1", 100, 300, f"R{i}")],
+                           regions_b=[])
+            for i, c in enumerate(["darkorchid", "teal", "sienna"])
+        ]
+        output = str(tmp_path / "test.pdf")
+        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=tracks)
+        assert os.path.getsize(output) > 0
+
+    def test_plot_no_bed_tracks_unchanged(self, tmp_path):
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
+        hits = [_make_hit(100, 150, 200, 250)]
+        output = str(tmp_path / "test.pdf")
+        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=None)
+        assert os.path.getsize(output) > 0
+
+    def test_legend_includes_bed_tracks(self, tmp_path):
+        import matplotlib.pyplot as plt
+        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
+        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
+        hits = [_make_hit(100, 150, 200, 250)]
+        bt = BedTrackConfig(
+            label="my_repeats",
+            color="darkorchid",
+            regions_a=[BedRegion("chr1", 100, 300, "AluSc")],
+            regions_b=[],
+        )
+        output = str(tmp_path / "test.pdf")
+        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=[bt])
+        fig = plt.gcf()
+        labels = [t.get_text() for t in fig.legends[0].get_texts()]
+        assert "my_repeats" in labels

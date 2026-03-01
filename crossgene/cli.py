@@ -19,7 +19,8 @@ from crossgene.parser import parse_paf
 from crossgene.parser_blast import parse_blast_tabular
 from crossgene.scores import compute_scores
 from crossgene.tsv_writer import write_tsv
-from crossgene.visualize import create_circlize_plot
+from crossgene.bed_parser import filter_and_clip, parse_bed
+from crossgene.visualize import BED_COLORS, BedTrackConfig, create_circlize_plot
 
 logger = logging.getLogger("crossgene")
 
@@ -133,12 +134,14 @@ def _run_direction(
 @click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
 @click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
 @click.option("--min-mapq", default=0, show_default=True, help="Minimum MAPQ to report a hit")
+@click.option("--bed", "bed_files", multiple=True, type=click.Path(exists=True), help="BED file for annotation overlay on circular plot (repeatable, max 3).")
+@click.option("--bed-color", "bed_colors", multiple=True, type=str, help="Color for corresponding --bed file (default: auto-assigned).")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 @click.pass_context
 def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
          sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, strict, min_mapq, verbose):
+         flanking, strict, min_mapq, bed_files, bed_colors, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
@@ -162,8 +165,17 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
             max_secondary, min_quality, min_mapq,
         )
 
+    # Validate BED options
+    if len(bed_files) > 3:
+        raise click.ClickException("At most 3 --bed files are supported.")
+    if len(bed_colors) > len(bed_files):
+        raise click.ClickException("More --bed-color values than --bed files.")
+
     # Parse and validate output formats
     formats = _parse_formats(output_formats)
+
+    if bed_files and "plot" not in formats:
+        logger.warning("--bed files provided but 'plot' not in output formats — BED tracks will be ignored.")
 
     # Validate aligner
     try:
@@ -243,9 +255,30 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
 
     # Visualization (A→B hits only, per architecture)
     if "plot" in formats:
+        # Process BED files for annotation overlay
+        bed_tracks: list[BedTrackConfig] = []
+        for i, bed_path in enumerate(bed_files):
+            regions = parse_bed(bed_path)
+            color = bed_colors[i] if i < len(bed_colors) else BED_COLORS[i]
+            label = Path(bed_path).stem
+
+            regions_a = filter_and_clip(regions, rec_a.chrom, rec_a.start, rec_a.end)
+            regions_b = filter_and_clip(regions, rec_b.chrom, rec_b.start, rec_b.end)
+
+            if not regions_a and not regions_b:
+                logger.warning("BED file %s: no regions overlap either gene", bed_path)
+
+            bed_tracks.append(BedTrackConfig(
+                label=label, color=color,
+                regions_a=regions_a, regions_b=regions_b,
+            ))
+
         plot_path = os.path.join(outdir, f"{rec_a.name}_vs_{rec_b.name}.circlize.pdf")
         logger.info("Creating circlize plot...")
-        create_circlize_plot(hits_ab, rec_a, rec_b, plot_path)
+        create_circlize_plot(
+            hits_ab, rec_a, rec_b, plot_path,
+            bed_tracks=bed_tracks or None,
+        )
 
     # Clean up temp files
     for tmp in all_temp_files:
