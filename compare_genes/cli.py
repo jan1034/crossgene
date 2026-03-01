@@ -112,7 +112,7 @@ def _run_direction(
 @click.option("--gene-a", required=True, help="First gene name (e.g., BRCA1)")
 @click.option("--gene-b", required=True, help="Second gene name (e.g., BRCA2)")
 @click.option("--fragment-size", default=50, show_default=True, help="Fragment length in bp")
-@click.option("--step-size", default=1, show_default=True, help="Step between fragments in bp")
+@click.option("--step-size", default=25, show_default=True, help="Step between fragments in bp")
 @click.option("--min-quality", default=30, show_default=True, help="Minimum identity (0-100) to report a hit")
 @click.option("--max-secondary", default=10, show_default=True, help="Max secondary alignments per fragment")
 @click.option("--genome", default="references/homo_sapiens.109.mainChr.fa", show_default=True, help="Path to genome FASTA")
@@ -127,7 +127,7 @@ def _run_direction(
 @click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
-@click.option("--flanking", default=0, show_default=True, help="Flanking region size in bp (upstream + downstream)")
+@click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,

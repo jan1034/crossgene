@@ -32,16 +32,13 @@ def _strand_label(gene: GeneRecord) -> str:
     return f"{gene.name} ({gene.strand})"
 
 
-def _mapq_to_alpha(mapq: int, max_mapq: int, num_hits: int) -> float:
-    """Normalize mapq to alpha, scaled down by hit count for density visibility.
+def _identity_to_alpha(identity: float, num_hits: int) -> float:
+    """Convert sequence identity (0.0-1.0) to alpha, scaled by hit density.
 
-    Base alpha from mapq is in [0.2, 1.0], then scaled by a density factor
-    so overlapping arcs accumulate rather than saturate.
+    Base alpha from identity is in [0.1, 1.0], then scaled by a density
+    factor so overlapping arcs accumulate rather than saturate.
     """
-    if max_mapq <= 0:
-        base = 0.6
-    else:
-        base = 0.2 + 0.8 * min(mapq, max_mapq) / max_mapq
+    base = 0.1 + 0.9 * identity
 
     if num_hits <= 50:
         density_factor = 1.0
@@ -79,7 +76,7 @@ def create_circlize_plot(
 
     Gene A is displayed on the right, Gene B on the left.
     Arcs connect matching regions colored by strand (blue = same-sense,
-    red = antisense) with alpha proportional to mapping quality.
+    red = antisense) with alpha proportional to sequence identity.
 
     Args:
         hits_ab: Alignment hits from A→B direction.
@@ -152,9 +149,6 @@ def create_circlize_plot(
             label_size=6,
         )
 
-    # Find max mapq for alpha normalization
-    max_mapq = max((h.mapq for h in hits_ab), default=1)
-
     # Draw arcs (links) between matching regions
     for hit in hits_ab:
         # Convert genomic coords to sector-local coords
@@ -170,7 +164,7 @@ def create_circlize_plot(
         b_local_end = max(0, min(b_local_end, gene_b_len))
 
         color = COLOR_ANTISENSE if hit.strand == "-" else COLOR_SAME_SENSE
-        alpha = _mapq_to_alpha(hit.mapq, max_mapq, len(hits_ab))
+        alpha = _identity_to_alpha(hit.identity, len(hits_ab))
 
         circos.link(
             (label_a, a_local_start, a_local_end),

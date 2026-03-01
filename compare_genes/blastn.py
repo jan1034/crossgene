@@ -48,7 +48,7 @@ def _build_blastn_command(
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen "
                    "qstart qend sstart send evalue bitscore qlen slen sstrand",
         "-max_target_seqs", str(params.max_secondary),
-        "-dust", "no",
+        "-dust", "yes",
         "-soft_masking", "false",
     ]
 
@@ -72,12 +72,12 @@ def _build_blastn_command(
         ])
     else:
         cmd.extend([
-            "-word_size", "11",
-            "-reward", "2",
-            "-penalty", "-3",
-            "-gapopen", "5",
+            "-word_size", "15",
+            "-reward", "1",
+            "-penalty", "-4",
+            "-gapopen", "1",
             "-gapextend", "2",
-            "-evalue", "0.1",
+            "-evalue", "1e-3",
         ])
 
     return cmd
