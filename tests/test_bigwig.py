@@ -4,7 +4,7 @@ import numpy as np
 import pyBigWig
 import pytest
 
-from compare_genes.bigwig import read_chrom_sizes, write_bigwig
+from crossgene.bigwig import read_chrom_sizes, write_bigwig
 
 
 @pytest.fixture

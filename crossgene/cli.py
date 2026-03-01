@@ -1,4 +1,4 @@
-"""CLI entry point for compare-genes."""
+"""CLI entry point for crossgene."""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ from pathlib import Path
 
 import click
 
-from compare_genes import __version__
-from compare_genes.align import AlignParams, align_fragments, check_minimap2, write_target_fasta
-from compare_genes.bigwig import write_bigwig
-from compare_genes.blastn import BlastParams, align_fragments_blastn, check_blastn
-from compare_genes.fragment import generate_fragments
-from compare_genes.gene_extractor import extract_sequence, load_features, lookup_gene
-from compare_genes.parser import parse_paf
-from compare_genes.parser_blast import parse_blast_tabular
-from compare_genes.scores import compute_scores
-from compare_genes.tsv_writer import write_tsv
-from compare_genes.visualize import create_circlize_plot
+from crossgene import __version__
+from crossgene.align import AlignParams, align_fragments, check_minimap2, write_target_fasta
+from crossgene.bigwig import write_bigwig
+from crossgene.blastn import BlastParams, align_fragments_blastn, check_blastn
+from crossgene.fragment import generate_fragments
+from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene
+from crossgene.parser import parse_paf
+from crossgene.parser_blast import parse_blast_tabular
+from crossgene.scores import compute_scores
+from crossgene.tsv_writer import write_tsv
+from crossgene.visualize import create_circlize_plot
 
-logger = logging.getLogger("compare_genes")
+logger = logging.getLogger("crossgene")
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -141,7 +141,7 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     """
     t0 = time.time()
     _setup_logging(verbose)
-    logger.info("compare-genes v%s", __version__)
+    logger.info("crossgene v%s", __version__)
 
     # Parse and validate output formats
     formats = _parse_formats(output_formats)

@@ -10,7 +10,7 @@ import matplotlib.patches as mpatches
 
 from pycirclize import Circos
 
-from compare_genes.models import AlignmentHit, GeneRecord
+from crossgene.models import AlignmentHit, GeneRecord
 
 logger = logging.getLogger(__name__)
 

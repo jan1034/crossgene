@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from compare_genes.models import AlignmentHit, GeneFeature, GeneRecord
-from compare_genes.visualize import (
+from crossgene.models import AlignmentHit, GeneFeature, GeneRecord
+from crossgene.visualize import (
     FEATURE_COLORS,
     _mapq_to_alpha,
     _strand_label,

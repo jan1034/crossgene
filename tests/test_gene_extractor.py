@@ -7,8 +7,8 @@ from pathlib import Path
 import pysam
 import pytest
 
-from compare_genes.gene_extractor import extract_sequence, load_features, lookup_gene, _reverse_complement
-from compare_genes.models import GeneRecord
+from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene, _reverse_complement
+from crossgene.models import GeneRecord
 
 TEST_DATA = Path(__file__).parent / "test_data"
 

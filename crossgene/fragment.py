@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from compare_genes.models import GeneRecord
+from crossgene.models import GeneRecord
 
 
 def generate_fragments(

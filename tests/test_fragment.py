@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from compare_genes.fragment import fragment_index_to_genomic, generate_fragments
-from compare_genes.models import GeneRecord
+from crossgene.fragment import fragment_index_to_genomic, generate_fragments
+from crossgene.models import GeneRecord
 
 
 def _make_gene(seq: str, strand: str = "+", start: int = 1000, name: str = "TEST") -> GeneRecord:

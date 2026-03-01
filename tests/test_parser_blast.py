@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from compare_genes.models import AlignmentHit, GeneRecord
-from compare_genes.parser_blast import parse_blast_tabular
+from crossgene.models import AlignmentHit, GeneRecord
+from crossgene.parser_blast import parse_blast_tabular
 
 
 def _make_gene(name="GENE_A", chrom="chr1", start=1000, end=2000, strand="+") -> GeneRecord:

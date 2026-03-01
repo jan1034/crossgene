@@ -1,4 +1,4 @@
-# Compare Genes — Implementation Plan
+# CrossGene — Implementation Plan
 
 ## Design Decisions (from Implementation Discussion)
 
@@ -10,7 +10,7 @@
 | I4 | Plot format | **PDF** only (no format flag for now) |
 | I5 | Arc limit | **Auto-subsample**: if arc count > threshold (5000), subsample keeping top-scoring arcs |
 | I6 | Logging | **Python logging** module with `--verbose` flag (default: INFO, verbose: DEBUG) |
-| I7 | Packaging | **pip-installable** CLI via console_scripts entry point (`compare-genes`) |
+| I7 | Packaging | **pip-installable** CLI via console_scripts entry point (`crossgene`) |
 
 ---
 
@@ -22,16 +22,16 @@ Create the package skeleton and build configuration.
 
 **Files to create:**
 - `pyproject.toml` — package metadata, dependencies, console_scripts entry point
-- `compare_genes/__init__.py` — empty (or version only)
-- `compare_genes/models.py` — dataclasses (GeneRecord, GeneFeature, AlignmentHit)
+- `crossgene/__init__.py` — empty (or version only)
+- `crossgene/models.py` — dataclasses (GeneRecord, GeneFeature, AlignmentHit)
 
 **pyproject.toml details:**
 - Build backend: `hatchling` (or `setuptools`)
 - Python: `>=3.10`
 - Dependencies: `click`, `pysam`, `numpy`, `pyBigWig`, `pycirclize`, `gtfparse`, `matplotlib`
-- Entry point: `compare-genes = compare_genes.cli:main`
+- Entry point: `crossgene = crossgene.cli:main`
 
-**Checkpoint:** `pip install -e .` succeeds, `compare-genes --help` shows placeholder help text.
+**Checkpoint:** `pip install -e .` succeeds, `crossgene --help` shows placeholder help text.
 
 ---
 

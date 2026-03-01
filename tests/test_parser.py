@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from compare_genes.models import AlignmentHit, GeneRecord
-from compare_genes.parser import _target_local_to_genomic, parse_paf
+from crossgene.models import AlignmentHit, GeneRecord
+from crossgene.parser import _target_local_to_genomic, parse_paf
 
 
 def _make_gene(name="GENE_A", chrom="chr1", start=1000, end=2000, strand="+") -> GeneRecord:

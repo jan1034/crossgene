@@ -2,8 +2,8 @@
 
 import csv
 
-from compare_genes.models import AlignmentHit
-from compare_genes.tsv_writer import COLUMNS, write_tsv
+from crossgene.models import AlignmentHit
+from crossgene.tsv_writer import COLUMNS, write_tsv
 
 
 def _make_hit(q_start, q_end, alignment_score, identity=0.9, **kwargs) -> AlignmentHit:

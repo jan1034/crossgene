@@ -1,4 +1,4 @@
-# Compare Genes — Initial Draft
+# CrossGene — Initial Draft
 
 ## Problem Statement
 

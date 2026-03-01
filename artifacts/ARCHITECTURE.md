@@ -1,4 +1,4 @@
-# Compare Genes — Architecture
+# CrossGene — Architecture
 
 ## Design Decisions (from Discussion)
 
@@ -355,8 +355,8 @@ outdir/
 ## File Structure
 
 ```
-compare_genes/
-├── compare_genes/
+crossgene/
+├── crossgene/
 │   ├── __init__.py
 │   ├── cli.py              # Click CLI entry point
 │   ├── gene_extractor.py   # GTF lookup + FASTA extraction

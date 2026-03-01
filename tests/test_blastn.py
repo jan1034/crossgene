@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from compare_genes.blastn import (
+from crossgene.blastn import (
     BlastParams,
     _build_blastn_command,
     _make_blast_db,
@@ -16,14 +16,14 @@ from compare_genes.blastn import (
 
 class TestCheckBlastn:
     def test_both_found(self):
-        with patch("compare_genes.blastn.shutil.which", return_value="/usr/bin/blastn"):
+        with patch("crossgene.blastn.shutil.which", return_value="/usr/bin/blastn"):
             check_blastn()  # should not raise
 
     def test_blastn_not_found(self):
         def mock_which(name):
             return None if name == "blastn" else "/usr/bin/makeblastdb"
 
-        with patch("compare_genes.blastn.shutil.which", side_effect=mock_which):
+        with patch("crossgene.blastn.shutil.which", side_effect=mock_which):
             with pytest.raises(RuntimeError, match="blastn not found"):
                 check_blastn()
 
@@ -31,7 +31,7 @@ class TestCheckBlastn:
         def mock_which(name):
             return "/usr/bin/blastn" if name == "blastn" else None
 
-        with patch("compare_genes.blastn.shutil.which", side_effect=mock_which):
+        with patch("crossgene.blastn.shutil.which", side_effect=mock_which):
             with pytest.raises(RuntimeError, match="makeblastdb not found"):
                 check_blastn()
 
@@ -125,7 +125,7 @@ class TestMakeBlastDb:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("compare_genes.blastn.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("crossgene.blastn.subprocess.run", return_value=mock_result) as mock_run:
             db_path, db_files = _make_blast_db(target)
 
             call_args = mock_run.call_args[0][0]
@@ -144,7 +144,7 @@ class TestMakeBlastDb:
         mock_result.returncode = 1
         mock_result.stderr = "some error"
 
-        with patch("compare_genes.blastn.subprocess.run", return_value=mock_result):
+        with patch("crossgene.blastn.subprocess.run", return_value=mock_result):
             with pytest.raises(RuntimeError, match="makeblastdb failed"):
                 _make_blast_db(target)
 
@@ -161,7 +161,7 @@ class TestAlignFragmentsBlastn:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("compare_genes.blastn.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("crossgene.blastn.subprocess.run", return_value=mock_result) as mock_run:
             tsv_path, db_files = align_fragments_blastn(frags, target, params)
 
             # Should have been called twice: makeblastdb + blastn
@@ -190,6 +190,6 @@ class TestAlignFragmentsBlastn:
         mock_fail.returncode = 1
         mock_fail.stderr = "blast error"
 
-        with patch("compare_genes.blastn.subprocess.run", side_effect=[mock_ok, mock_fail]):
+        with patch("crossgene.blastn.subprocess.run", side_effect=[mock_ok, mock_fail]):
             with pytest.raises(RuntimeError, match="blastn failed"):
                 align_fragments_blastn(frags, target, params)

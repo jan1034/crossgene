@@ -6,7 +6,7 @@ Based on resolved design questions in `ISSUES_v2.md`.
 
 ## Step 1 — Gene Extractor: Separate annotation loading from gene lookup
 
-**File:** `compare_genes/gene_extractor.py`
+**File:** `crossgene/gene_extractor.py`
 
 ### Changes:
 1. **Add `load_features()` function** — loads sub-gene features from an annotation GTF:
@@ -41,7 +41,7 @@ Based on resolved design questions in `ISSUES_v2.md`.
 
 ## Step 2 — CLI: Add new parameters and wire annotation loading
 
-**File:** `compare_genes/cli.py`
+**File:** `crossgene/cli.py`
 
 ### New CLI parameters:
 ```
@@ -59,14 +59,14 @@ Based on resolved design questions in `ISSUES_v2.md`.
 4. Validate `--annotation-gtf` file exists (if provided and plot format requested)
 
 ### Checkpoint:
-- `compare-genes --help` shows the new parameters
+- `crossgene --help` shows the new parameters
 - Running with `--output-formats plot` loads features from `mainChr.gtf`
 
 ---
 
 ## Step 3 — Visualization: Add legend
 
-**File:** `compare_genes/visualize.py`
+**File:** `crossgene/visualize.py`
 
 ### Changes to `create_circlize_plot()`:
 1. After `fig = circos.plotfig()`, add a matplotlib legend at the bottom of the figure
@@ -120,9 +120,9 @@ Based on resolved design questions in `ISSUES_v2.md`.
 
 | File | Change Type | Description |
 |------|------------|-------------|
-| `compare_genes/gene_extractor.py` | Modified | Add `load_features()` function |
-| `compare_genes/cli.py` | Modified | Add 3 new CLI params, wire annotation loading |
-| `compare_genes/visualize.py` | Modified | Add legend, extend feature color mapping |
+| `crossgene/gene_extractor.py` | Modified | Add `load_features()` function |
+| `crossgene/cli.py` | Modified | Add 3 new CLI params, wire annotation loading |
+| `crossgene/visualize.py` | Modified | Add legend, extend feature color mapping |
 | `tests/test_gene_extractor.py` | Modified | Add tests for `load_features()` |
 | `tests/test_visualize.py` | Modified | Add tests for legend |
 | `artifacts/ISSUES_v2.md` | Reference | Design decisions documented |

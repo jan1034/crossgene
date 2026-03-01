@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Compare Genes is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A).
+CrossGene is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A).
 
 **Status:** Implementation in progress (Step 1 complete). See artifacts/ANALYSIS.md, artifacts/ARCHITECTURE.md, and artifacts/IMPLEMENTATION.md.
 
 ## Development Environment
 
-- Conda environment: `compare_genes` (Python 3.11)
-- Activate: `conda activate compare_genes`
+- Conda environment: `crossgene` (Python 3.11)
+- Activate: `conda activate crossgene`
 - Package installed in editable mode: `pip install -e .`
-- CLI entry point: `compare-genes`
+- CLI entry point: `crossgene`
 
 ## Technology Stack
 
@@ -29,7 +29,7 @@ Compare Genes is a Python tool that compares two gene sequences by fragmenting o
 
 ## Planned Module Architecture
 
-Ten modules in `compare_genes/`:
+Ten modules in `crossgene/`:
 - `cli.py` — Click entry point
 - `gene_extractor.py` — GTF lookup + FASTA extraction via pysam
 - `fragment.py` — Rolling window fragmentation

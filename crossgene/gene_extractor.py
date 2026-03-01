@@ -7,7 +7,7 @@ import logging
 import gtfparse
 import pysam
 
-from compare_genes.models import GeneFeature, GeneRecord
+from crossgene.models import GeneFeature, GeneRecord
 
 logger = logging.getLogger(__name__)
 

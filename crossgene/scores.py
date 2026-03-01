@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from compare_genes.models import AlignmentHit, GeneRecord
+from crossgene.models import AlignmentHit, GeneRecord
 
 
 def compute_scores(

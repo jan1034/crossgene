@@ -6,7 +6,7 @@ import pysam
 import pytest
 from click.testing import CliRunner
 
-from compare_genes.cli import main, _parse_formats
+from crossgene.cli import main, _parse_formats
 
 
 class TestParseFormats:

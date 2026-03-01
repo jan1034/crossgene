@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from compare_genes.align import (
+from crossgene.align import (
     AlignParams,
     _build_command,
     _select_preset,
@@ -13,7 +13,7 @@ from compare_genes.align import (
     check_minimap2,
     write_target_fasta,
 )
-from compare_genes.models import GeneRecord
+from crossgene.models import GeneRecord
 
 
 class TestSelectPreset:
@@ -118,7 +118,7 @@ class TestCheckMinimap2:
         check_minimap2()
 
     def test_not_found(self):
-        with patch("compare_genes.align.shutil.which", return_value=None):
+        with patch("crossgene.align.shutil.which", return_value=None):
             with pytest.raises(RuntimeError, match="minimap2 not found"):
                 check_minimap2()
 
@@ -149,7 +149,7 @@ class TestAlignFragments:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("compare_genes.align.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("crossgene.align.subprocess.run", return_value=mock_result) as mock_run:
             paf = align_fragments(frags, target, params)
 
             call_args = mock_run.call_args[0][0]
@@ -173,6 +173,6 @@ class TestAlignFragments:
         mock_result.returncode = 1
         mock_result.stderr = "some error"
 
-        with patch("compare_genes.align.subprocess.run", return_value=mock_result):
+        with patch("crossgene.align.subprocess.run", return_value=mock_result):
             with pytest.raises(RuntimeError, match="minimap2 failed"):
                 align_fragments(frags, target, params)

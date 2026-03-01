@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 
-from compare_genes.models import AlignmentHit
+from crossgene.models import AlignmentHit
 
 COLUMNS = [
     "query_gene", "query_chrom", "frag_start", "frag_end",

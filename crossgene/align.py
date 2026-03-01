@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from compare_genes.models import GeneRecord
+from crossgene.models import GeneRecord
 
 logger = logging.getLogger(__name__)
 

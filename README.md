@@ -1,4 +1,4 @@
-# Compare Genes
+# CrossGene
 
 A Python CLI tool for comparing two gene sequences by fragment alignment. It fragments one gene with a rolling window, aligns the fragments to another gene using [minimap2](https://github.com/lh3/minimap2) or [BLASTN](https://blast.ncbi.nlm.nih.gov/), and produces similarity profiles, detailed hit tables, and circular visualizations. The comparison runs bidirectionally (A→B and B→A).
 
@@ -28,19 +28,19 @@ BigWig files use real genomic coordinates and can be loaded directly into IGV.
 ### Install
 
 ```bash
-conda create -n compare_genes python=3.11
-conda activate compare_genes
+conda create -n crossgene python=3.11
+conda activate crossgene
 conda install -c bioconda minimap2 blast
 
 git clone <repository-url>
-cd compare_genes
+cd crossgene
 pip install -e .
 ```
 
 Verify the installation:
 
 ```bash
-compare-genes --help
+crossgene --help
 ```
 
 ## Reference Data
@@ -62,7 +62,7 @@ These paths are configurable via CLI flags (see below).
 ### Basic usage
 
 ```bash
-compare-genes --gene-a BRCA1 --gene-b BRCA2
+crossgene --gene-a BRCA1 --gene-b BRCA2
 ```
 
 ### Using BLASTN (for divergent paralogs)
@@ -70,7 +70,7 @@ compare-genes --gene-a BRCA1 --gene-b BRCA2
 BLASTN provides better sensitivity for divergent paralogs (70–90% identity) where minimap2 may miss hits:
 
 ```bash
-compare-genes \
+crossgene \
   --gene-a HSP90AB1 \
   --gene-b HSP90AA1 \
   --aligner blastn \
@@ -80,7 +80,7 @@ compare-genes \
 ### With custom parameters
 
 ```bash
-compare-genes \
+crossgene \
   --gene-a BRCA1 \
   --gene-b BRCA2 \
   --fragment-size 100 \
@@ -164,15 +164,15 @@ The circular plot (pycirclize) shows:
 ### Running tests
 
 ```bash
-conda activate compare_genes
+conda activate crossgene
 pytest tests/ -v
 ```
 
 ### Project structure
 
 ```
-compare_genes/
-├── compare_genes/
+crossgene/
+├── crossgene/
 │   ├── __init__.py
 │   ├── cli.py              # Click CLI entry point
 │   ├── gene_extractor.py   # GTF lookup + FASTA extraction

@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from compare_genes.models import AlignmentHit, GeneRecord
-from compare_genes.scores import compute_scores
+from crossgene.models import AlignmentHit, GeneRecord
+from crossgene.scores import compute_scores
 
 
 def _make_gene(start=1000, end=1100, strand="+") -> GeneRecord:

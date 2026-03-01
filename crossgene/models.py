@@ -1,4 +1,4 @@
-"""Core data structures for compare_genes."""
+"""Core data structures for crossgene."""
 
 from __future__ import annotations
 

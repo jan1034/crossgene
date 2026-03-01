@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from compare_genes.fragment import fragment_index_to_genomic
-from compare_genes.models import AlignmentHit, GeneRecord
+from crossgene.fragment import fragment_index_to_genomic
+from crossgene.models import AlignmentHit, GeneRecord
 
 logger = logging.getLogger(__name__)
 
