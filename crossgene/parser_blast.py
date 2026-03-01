@@ -31,6 +31,7 @@ def parse_blast_tabular(
     step_size: int,
     min_quality: int,
     direction: str,
+    min_mapq: int = 0,
 ) -> list[AlignmentHit]:
     """Parse BLASTN tabular output into AlignmentHit objects.
 
@@ -119,6 +120,10 @@ def parse_blast_tabular(
 
         # Derive MAPQ from bitscore
         mapq = min(60, int(bitscore / max_bitscore * 60))
+
+        # Filter by MAPQ
+        if mapq < min_mapq:
+            continue
 
         # Primary/secondary: first HSP per query is primary
         is_primary = query_name not in seen_queries

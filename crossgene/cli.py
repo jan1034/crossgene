@@ -47,6 +47,7 @@ def _parse_formats(output_formats: str) -> set[str]:
 def _run_direction(
     query_gene, target_gene, fragment_size, step_size, min_quality,
     align_params, chrom_sizes, outdir, formats, direction_label, aligner="minimap2",
+    min_mapq=0,
 ) -> tuple[list, list[Path]]:
     """Run one direction of the comparison pipeline. Returns (hits, temp_files)."""
     temp_files: list[Path] = []
@@ -76,6 +77,7 @@ def _run_direction(
         hits = parse_blast_tabular(
             tsv_path, query_gene, target_gene,
             fragment_size, step_size, min_quality, direction_label,
+            min_mapq=min_mapq,
         )
     else:
         logger.info("Aligning fragments to %s with minimap2...", target_gene.name)
@@ -84,6 +86,7 @@ def _run_direction(
         hits = parse_paf(
             paf_path, query_gene, target_gene,
             fragment_size, step_size, min_quality, direction_label,
+            min_mapq=min_mapq,
         )
 
     logger.info("Found %d hits passing quality filter", len(hits))
@@ -128,11 +131,14 @@ def _run_direction(
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
 @click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
+@click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
+@click.option("--min-mapq", default=0, show_default=True, help="Minimum MAPQ to report a hit")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
-def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
+@click.pass_context
+def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
          sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, verbose):
+         flanking, strict, min_mapq, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
@@ -142,6 +148,19 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     t0 = time.time()
     _setup_logging(verbose)
     logger.info("crossgene v%s", __version__)
+
+    # Apply --strict overrides for parameters the user didn't explicitly set
+    if strict:
+        if ctx.get_parameter_source("max_secondary") == click.core.ParameterSource.DEFAULT:
+            max_secondary = 1
+        if ctx.get_parameter_source("min_quality") == click.core.ParameterSource.DEFAULT:
+            min_quality = 70
+        if ctx.get_parameter_source("min_mapq") == click.core.ParameterSource.DEFAULT:
+            min_mapq = 5
+        logger.info(
+            "Strict mode: max_secondary=%d, min_quality=%d, min_mapq=%d",
+            max_secondary, min_quality, min_mapq,
+        )
 
     # Parse and validate output formats
     formats = _parse_formats(output_formats)
@@ -210,6 +229,7 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     hits_ab, temps = _run_direction(
         rec_a, rec_b, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "A→B", aligner,
+        min_mapq=min_mapq,
     )
     all_temp_files.extend(temps)
 
@@ -217,6 +237,7 @@ def main(gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
     hits_ba, temps = _run_direction(
         rec_b, rec_a, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "B→A", aligner,
+        min_mapq=min_mapq,
     )
     all_temp_files.extend(temps)
 

@@ -51,6 +51,7 @@ def parse_paf(
     step_size: int,
     min_quality: int,
     direction: str,
+    min_mapq: int = 0,
 ) -> list[AlignmentHit]:
     """Parse a minimap2 PAF file into AlignmentHit objects.
 
@@ -98,6 +99,10 @@ def parse_paf(
 
             # Filter by quality
             if identity * 100 < min_quality:
+                continue
+
+            # Filter by MAPQ
+            if mapq < min_mapq:
                 continue
 
             # Parse optional fields

@@ -48,6 +48,7 @@ def _build_blastn_command(
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen "
                    "qstart qend sstart send evalue bitscore qlen slen sstrand",
         "-max_target_seqs", str(params.max_secondary),
+        "-max_hsps", str(params.max_secondary),
         "-dust", "yes",
         "-soft_masking", "false",
     ]
