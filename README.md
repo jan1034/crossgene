@@ -77,6 +77,22 @@ crossgene \
   --divergent
 ```
 
+### With BED annotation overlay
+
+Overlay up to 3 BED files on the circular plot as inner annotation rings (e.g., repeat elements, regulatory regions):
+
+```bash
+crossgene \
+  --gene-a BRCA1 \
+  --gene-b BRCA2 \
+  --bed repeats.bed \
+  --bed regulatory.bed \
+  --bed-color darkorchid \
+  --bed-color teal
+```
+
+Each `--bed` file gets its own ring below the tick track. Colors are auto-assigned from a default palette (darkorchid, teal, sienna) or overridden with `--bed-color`. Region names from BED column 4 are drawn as labels on sufficiently large regions.
+
 ### With custom parameters
 
 ```bash
@@ -110,6 +126,8 @@ crossgene \
 | minimap2 preset | `--minimap2-preset` | `auto` | Override minimap2 preset (auto selects `-x sr` for fragments <=200 bp) |
 | Sensitive mode | `--sensitive` | off | Tune aligner for moderate divergence |
 | Divergent mode | `--divergent` | off | Tune aligner for high divergence / paralogs (mutually exclusive with `--sensitive`) |
+| BED overlay | `--bed` | none | BED file for annotation overlay on circular plot (repeatable, max 3) |
+| BED color | `--bed-color` | auto | Color for corresponding `--bed` file (default: darkorchid, teal, sienna) |
 | Verbose | `--verbose` / `-v` | off | Enable debug logging |
 
 ## How It Works
@@ -154,6 +172,7 @@ A score of **100** means perfect match, **0** means no fragment aligned at all.
 
 The circular plot (pycirclize) shows:
 - Gene A on the right, Gene B on the left, with exon/CDS annotations
+- Optional BED annotation rings below the tick track (up to 3, via `--bed`)
 - Arcs connecting matching regions (A→B direction)
 - Arc color: blue = same-sense match, red = antisense match
 - Arc transparency: proportional to mapping quality
@@ -185,6 +204,7 @@ crossgene/
 │   ├── bigwig.py            # BigWig writer
 │   ├── tsv_writer.py        # TSV output
 │   ├── visualize.py         # Circular plot (pycirclize)
+│   ├── bed_parser.py        # BED file parsing + region clipping
 │   └── models.py            # Data structures
 ├── tests/
 ├── references/              # Reference data (not tracked)
