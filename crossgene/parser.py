@@ -85,6 +85,9 @@ def parse_paf(
 
             # Core PAF columns
             query_name = fields[0]
+            query_length = int(fields[1])
+            query_align_start = int(fields[2])
+            query_align_end = int(fields[3])
             target_local_start = int(fields[7])
             target_local_end = int(fields[8])
             strand = fields[4]
@@ -92,10 +95,11 @@ def parse_paf(
             alignment_block_length = int(fields[10])
             mapq = int(fields[11])
 
-            # Compute identity
-            if alignment_block_length == 0:
+            # Compute identity and query coverage
+            if alignment_block_length == 0 or query_length == 0:
                 continue
             identity = num_matches / alignment_block_length
+            query_coverage = (query_align_end - query_align_start) / query_length
 
             # Filter by quality
             if identity * 100 < min_quality:
@@ -137,6 +141,7 @@ def parse_paf(
                     target_end=target_genomic_end,
                     strand=strand,
                     identity=identity,
+                    query_coverage=query_coverage,
                     mapq=mapq,
                     cigar=cigar,
                     alignment_score=alignment_score,

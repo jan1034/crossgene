@@ -35,8 +35,9 @@ def compute_scores(
     best_per_fragment: dict[tuple[int, int], float] = defaultdict(float)
     for hit in hits:
         key = (hit.query_start, hit.query_end)
-        if hit.identity > best_per_fragment[key]:
-            best_per_fragment[key] = hit.identity
+        effective_identity = hit.identity * hit.query_coverage
+        if effective_identity > best_per_fragment[key]:
+            best_per_fragment[key] = effective_identity
 
     # Accumulate scores
     for (q_start, q_end), best_identity in best_per_fragment.items():

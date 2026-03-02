@@ -9,7 +9,7 @@ from crossgene.models import AlignmentHit
 COLUMNS = [
     "query_gene", "query_chrom", "frag_start", "frag_end",
     "target_gene", "target_chrom", "hit_start", "hit_end",
-    "strand", "identity", "mapq", "alignment_score",
+    "strand", "identity", "query_coverage", "mapq", "alignment_score",
     "is_primary", "cigar", "direction",
 ]
 
@@ -37,6 +37,7 @@ def write_tsv(hits: list[AlignmentHit], output_path: str) -> None:
                 h.target_end,
                 h.strand,
                 f"{h.identity:.4f}",
+                f"{h.query_coverage:.4f}",
                 h.mapq,
                 h.alignment_score,
                 str(h.is_primary).lower(),

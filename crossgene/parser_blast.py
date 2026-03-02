@@ -19,6 +19,7 @@ _COL_LENGTH = 3
 _COL_SSTART = 8
 _COL_SEND = 9
 _COL_BITSCORE = 11
+_COL_QLEN = 12
 _COL_SSTRAND = 14
 _NUM_COLUMNS = 15
 
@@ -95,6 +96,9 @@ def parse_blast_tabular(
         query_name = fields[_COL_QSEQID]
         pident = float(fields[_COL_PIDENT])  # 0-100 from BLAST
         identity = pident / 100.0
+        alignment_length = int(fields[_COL_LENGTH])
+        qlen = int(fields[_COL_QLEN])
+        query_coverage = alignment_length / qlen if qlen > 0 else 0.0
 
         # Filter by quality
         if pident < min_quality:
@@ -154,6 +158,7 @@ def parse_blast_tabular(
                 target_end=target_genomic_end,
                 strand=strand,
                 identity=identity,
+                query_coverage=query_coverage,
                 mapq=mapq,
                 cigar="",  # BLAST tabular doesn't include CIGAR
                 alignment_score=int(bitscore),

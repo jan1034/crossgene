@@ -60,6 +60,7 @@ class AlignmentHit:
     # Alignment info
     strand: str  # '+' or '-'
     identity: float  # 0.0 - 1.0
+    query_coverage: float  # 0.0 - 1.0, fraction of query fragment that aligned
     mapq: int  # mapping quality
     cigar: str  # CIGAR string
     alignment_score: int  # AS tag value
