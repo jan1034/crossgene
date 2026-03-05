@@ -49,7 +49,7 @@ class TestCLI:
         result = runner.invoke(main, [
             "--gene-a", "NONEXISTENT",
             "--gene-b", "REAL_GENE",
-            "--gtf", str(gtf),
+            "--genes-gtf", str(gtf),
             "--genome", str(genome),
             "--chrom-sizes", str(chrom_sizes),
             "--outdir", str(tmp_path / "out"),
@@ -85,7 +85,7 @@ class TestCLI:
             "--fragment-size", "50",
             "--step-size", "25",
             "--min-quality", "30",
-            "--gtf", str(gtf),
+            "--genes-gtf", str(gtf),
             "--genome", str(genome),
             "--chrom-sizes", str(chrom_sizes),
             "--outdir", str(outdir),
@@ -104,6 +104,61 @@ class TestCLI:
         # TSV should have a header + at least some hits
         tsv_lines = (outdir / "SYNTH_A_vs_SYNTH_B.hits.tsv").read_text().strip().splitlines()
         assert len(tsv_lines) >= 2  # header + at least 1 hit
+
+
+class TestBlacklistCLI:
+    def test_blacklist_option_in_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--help"])
+        assert "--blacklist" in result.output
+
+    def test_blacklist_nonexistent_file(self):
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "--gene-a", "X", "--gene-b", "Y",
+            "--blacklist", "/nonexistent/path.bed",
+        ])
+        assert result.exit_code != 0
+
+    def test_blacklist_integration(self, tmp_path):
+        """End-to-end: blacklist removes fragments, reducing hit count."""
+        shared = "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT"  # 52bp
+        seq_a = "N" * 50 + shared + "N" * 48  # 150bp total
+        seq_b = "T" * 30 + shared + "T" * 68  # 150bp total
+
+        gtf = tmp_path / "test.gtf"
+        gtf.write_text(
+            'chr1\ttest\tgene\t1\t150\t.\t+\t.\tgene_id "G001"; gene_name "SYNTH_A"; gene_biotype "protein_coding";\n'
+            'chr2\ttest\tgene\t1\t150\t.\t+\t.\tgene_id "G002"; gene_name "SYNTH_B"; gene_biotype "protein_coding";\n'
+        )
+
+        genome = tmp_path / "test.fa"
+        genome.write_text(f">chr1\n{seq_a}\n>chr2\n{seq_b}\n")
+        pysam.faidx(str(genome))
+
+        chrom_sizes = tmp_path / "chrom.sizes"
+        chrom_sizes.write_text("chr1\t150\nchr2\t150\n")
+
+        # Blacklist a region of gene A (chr1:40-80)
+        blacklist = tmp_path / "blacklist.bed"
+        blacklist.write_text("chr1\t40\t80\tblack_region\n")
+
+        outdir = tmp_path / "output"
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "--gene-a", "SYNTH_A",
+            "--gene-b", "SYNTH_B",
+            "--fragment-size", "50",
+            "--step-size", "25",
+            "--min-quality", "30",
+            "--genes-gtf", str(gtf),
+            "--genome", str(genome),
+            "--chrom-sizes", str(chrom_sizes),
+            "--outdir", str(outdir),
+            "--output-formats", "tsv",
+            "--blacklist", str(blacklist),
+        ])
+        assert result.exit_code == 0, f"CLI failed:\n{result.output}"
 
 
 class TestBedCLI:

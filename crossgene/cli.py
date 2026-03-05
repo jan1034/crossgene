@@ -48,7 +48,7 @@ def _parse_formats(output_formats: str) -> set[str]:
 def _run_direction(
     query_gene, target_gene, fragment_size, step_size, min_quality,
     align_params, chrom_sizes, outdir, formats, direction_label, aligner="minimap2",
-    min_mapq=0,
+    min_mapq=0, blacklist_regions=None,
 ) -> tuple[list, list[Path]]:
     """Run one direction of the comparison pipeline. Returns (hits, temp_files)."""
     temp_files: list[Path] = []
@@ -58,7 +58,7 @@ def _run_direction(
         direction_label, query_gene.name,
         len(query_gene.sequence), step_size,
     )
-    frags_path = generate_fragments(query_gene, fragment_size, step_size)
+    frags_path = generate_fragments(query_gene, fragment_size, step_size, blacklist=blacklist_regions)
     temp_files.append(frags_path)
 
     target_path = write_target_fasta(target_gene)
@@ -120,7 +120,7 @@ def _run_direction(
 @click.option("--min-quality", default=30, show_default=True, help="Minimum identity (0-100) to report a hit")
 @click.option("--max-secondary", default=10, show_default=True, help="Max secondary alignments per fragment")
 @click.option("--genome", default="references/homo_sapiens.109.mainChr.fa", show_default=True, help="Path to genome FASTA")
-@click.option("--gtf", default="references/homo_sapiens.109.genes.gtf", show_default=True, help="Path to gene annotation GTF")
+@click.option("--genes-gtf", default="references/homo_sapiens.109.genes.gtf", show_default=True, help="Path to gene annotation GTF")
 @click.option("--chrom-sizes", default="references/homo_sapiens.109.chrom.sizes", show_default=True, help="Chromosome sizes file")
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
 @click.option("--output-formats", default="bigwig,tsv,plot", show_default=True, help="Comma-separated: bigwig,tsv,plot")
@@ -134,14 +134,15 @@ def _run_direction(
 @click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
 @click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
 @click.option("--min-mapq", default=0, show_default=True, help="Minimum MAPQ to report a hit")
+@click.option("--blacklist", default=None, type=click.Path(exists=True), help="BED file of regions to exclude from fragment generation.")
 @click.option("--bed", "bed_files", multiple=True, type=click.Path(exists=True), help="BED file for annotation overlay on circular plot (repeatable, max 3).")
 @click.option("--bed-color", "bed_colors", multiple=True, type=str, help="Color for corresponding --bed file (default: auto-assigned).")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 @click.pass_context
 def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
-         genome, gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
+         genome, genes_gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
          sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, strict, min_mapq, bed_files, bed_colors, verbose):
+         flanking, strict, min_mapq, blacklist, bed_files, bed_colors, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
@@ -186,7 +187,7 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
     except RuntimeError as e:
         raise click.ClickException(str(e))
 
-    for path, label in [(genome, "Genome FASTA"), (gtf, "GTF"), (chrom_sizes, "Chrom sizes")]:
+    for path, label in [(genome, "Genome FASTA"), (genes_gtf, "GTF"), (chrom_sizes, "Chrom sizes")]:
         if not os.path.exists(path):
             raise click.ClickException(f"{label} not found: {path}")
 
@@ -196,8 +197,8 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
     # Extract genes
     logger.info("Looking up genes...")
     try:
-        rec_a = lookup_gene(gene_a, gtf)
-        rec_b = lookup_gene(gene_b, gtf)
+        rec_a = lookup_gene(gene_a, genes_gtf)
+        rec_b = lookup_gene(gene_b, genes_gtf)
     except ValueError as e:
         raise click.ClickException(str(e))
 
@@ -224,6 +225,12 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
     elif "plot" in formats and annotation_gtf and not os.path.exists(annotation_gtf):
         logger.warning("Annotation GTF not found: %s — plot will have no gene features", annotation_gtf)
 
+    # Parse blacklist BED file
+    blacklist_all = None
+    if blacklist:
+        blacklist_all = parse_bed(blacklist)
+        logger.info("Blacklist: loaded %d regions from %s", len(blacklist_all), blacklist)
+
     if sensitive and divergent:
         raise click.ClickException("--sensitive and --divergent are mutually exclusive")
 
@@ -237,11 +244,26 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
 
     all_temp_files: list[Path] = []
 
+    # Filter blacklist regions per query gene
+    blacklist_a = None
+    blacklist_b = None
+    if blacklist_all:
+        blacklist_a = filter_and_clip(blacklist_all, rec_a.chrom, rec_a.start, rec_a.end)
+        blacklist_b = filter_and_clip(blacklist_all, rec_b.chrom, rec_b.start, rec_b.end)
+        logger.info(
+            "Blacklist: %d regions overlap %s (%s:%d-%d)",
+            len(blacklist_a), rec_a.name, rec_a.chrom, rec_a.start, rec_a.end,
+        )
+        logger.info(
+            "Blacklist: %d regions overlap %s (%s:%d-%d)",
+            len(blacklist_b), rec_b.name, rec_b.chrom, rec_b.start, rec_b.end,
+        )
+
     # Direction A→B
     hits_ab, temps = _run_direction(
         rec_a, rec_b, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "A→B", aligner,
-        min_mapq=min_mapq,
+        min_mapq=min_mapq, blacklist_regions=blacklist_a,
     )
     all_temp_files.extend(temps)
 
@@ -249,7 +271,7 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
     hits_ba, temps = _run_direction(
         rec_b, rec_a, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "B→A", aligner,
-        min_mapq=min_mapq,
+        min_mapq=min_mapq, blacklist_regions=blacklist_b,
     )
     all_temp_files.extend(temps)
 
