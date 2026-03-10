@@ -42,7 +42,7 @@ def generate_fragments(
     """Fragment a gene's sense sequence using a rolling window.
 
     Writes fragments to a temporary FASTA file with headers ``>gene_name:idx``
-    where idx is a 0-based sequential index.
+    where idx is the positional index (may have gaps when blacklist skips fragments).
 
     Edge cases:
     - Sequence shorter than fragment_size: single fragment = full sequence.
@@ -68,7 +68,6 @@ def generate_fragments(
         mode="w", suffix=".fa", prefix=f"frags_{gene.name}_", delete=False
     )
 
-    idx = 0
     skipped = 0
     total = 0
     bl_idx = 0  # sweep pointer for blacklist
@@ -81,9 +80,9 @@ def generate_fragments(
             if hit:
                 skipped = 1
             else:
-                tmp.write(f">{gene.name}:{idx}\n{seq}\n")
+                tmp.write(f">{gene.name}:0\n{seq}\n")
         else:
-            tmp.write(f">{gene.name}:{idx}\n{seq}\n")
+            tmp.write(f">{gene.name}:0\n{seq}\n")
     else:
         # For minus-strand genes, genomic coords decrease as sense pos increases,
         # so we need separate sweep pointers depending on strand direction.
@@ -108,8 +107,7 @@ def generate_fragments(
                     write = not hit
             if write:
                 frag = seq[pos : pos + fragment_size]
-                tmp.write(f">{gene.name}:{idx}\n{frag}\n")
-                idx += 1
+                tmp.write(f">{gene.name}:{frag_idx}\n{frag}\n")
             else:
                 skipped += 1
             frag_idx += 1
@@ -131,7 +129,7 @@ def generate_fragments(
                         hit, bl_idx = _overlaps_blacklist(g_start, g_end, blacklist, bl_idx)
                         write = not hit
                 if write:
-                    tmp.write(f">{gene.name}:{idx}\n{remainder}\n")
+                    tmp.write(f">{gene.name}:{frag_idx}\n{remainder}\n")
                 else:
                     skipped += 1
 

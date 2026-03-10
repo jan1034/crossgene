@@ -19,7 +19,7 @@ def _make_hit(q_start, q_end, identity, **kwargs) -> AlignmentHit:
     defaults = dict(
         query_chrom="chr1", target_chrom="chr2",
         target_start=5000, target_end=5050,
-        strand="+", mapq=40, cigar="50M",
+        strand="+", query_coverage=1.0, mapq=40, cigar="50M",
         alignment_score=90, is_primary=True,
         query_gene="TEST", target_gene="OTHER", direction="A→B",
     )

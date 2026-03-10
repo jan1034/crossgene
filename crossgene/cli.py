@@ -35,7 +35,7 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def _parse_formats(output_formats: str) -> set[str]:
-    valid = {"bigwig", "tsv", "plot"}
+    valid = {"bigwig", "tsv", "plot", "bed"}
     formats = {f.strip().lower() for f in output_formats.split(",")}
     unknown = formats - valid
     if unknown:
@@ -48,7 +48,7 @@ def _parse_formats(output_formats: str) -> set[str]:
 def _run_direction(
     query_gene, target_gene, fragment_size, step_size, min_quality,
     align_params, chrom_sizes, outdir, formats, direction_label, aligner="minimap2",
-    min_mapq=0, blacklist_regions=None,
+    min_mapq=0, blacklist_regions=None, bed_all_hits=False,
 ) -> tuple[list, list[Path]]:
     """Run one direction of the comparison pipeline. Returns (hits, temp_files)."""
     temp_files: list[Path] = []
@@ -109,6 +109,15 @@ def _run_direction(
         write_tsv(hits, tsv_path)
         logger.info("Wrote TSV: %s (%d rows)", tsv_path, len(hits))
 
+    if "bed" in formats:
+        from crossgene.bed_writer import write_hit_beds
+
+        dir_tag = "AtoB" if direction_label == "A→B" else "BtoA"
+        write_hit_beds(
+            hits, query_gene, target_gene, dir_tag, outdir,
+            primary_only=not bed_all_hits,
+        )
+
     return hits, temp_files
 
 
@@ -135,6 +144,7 @@ def _run_direction(
 @click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
 @click.option("--min-mapq", default=0, show_default=True, help="Minimum MAPQ to report a hit")
 @click.option("--blacklist", default=None, type=click.Path(exists=True), help="BED file of regions to exclude from fragment generation.")
+@click.option("--bed-all-hits", is_flag=True, default=False, help="Include secondary alignments in hit BED export (default: primary only).")
 @click.option("--bed", "bed_files", multiple=True, type=click.Path(exists=True), help="BED file for annotation overlay on circular plot (repeatable, max 3).")
 @click.option("--bed-color", "bed_colors", multiple=True, type=str, help="Color for corresponding --bed file (default: auto-assigned).")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
@@ -142,7 +152,7 @@ def _run_direction(
 def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
          genome, genes_gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
          sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, strict, min_mapq, blacklist, bed_files, bed_colors, verbose):
+         flanking, strict, min_mapq, blacklist, bed_all_hits, bed_files, bed_colors, verbose):
     """Compare two gene sequences by fragment alignment.
 
     Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
@@ -264,6 +274,7 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
         rec_a, rec_b, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "A→B", aligner,
         min_mapq=min_mapq, blacklist_regions=blacklist_a,
+        bed_all_hits=bed_all_hits,
     )
     all_temp_files.extend(temps)
 
@@ -272,6 +283,7 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
         rec_b, rec_a, fragment_size, step_size, min_quality,
         align_params, chrom_sizes, outdir, formats, "B→A", aligner,
         min_mapq=min_mapq, blacklist_regions=blacklist_b,
+        bed_all_hits=bed_all_hits,
     )
     all_temp_files.extend(temps)
 

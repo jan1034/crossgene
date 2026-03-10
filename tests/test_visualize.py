@@ -29,7 +29,7 @@ def _make_hit(q_start, q_end, t_start, t_end, strand="+", mapq=40, score=90):
     return AlignmentHit(
         query_chrom="chr1", query_start=q_start, query_end=q_end,
         target_chrom="chr2", target_start=t_start, target_end=t_end,
-        strand=strand, identity=0.9, mapq=mapq, cigar="50M",
+        strand=strand, identity=0.9, query_coverage=1.0, mapq=mapq, cigar="50M",
         alignment_score=score, is_primary=True,
         query_gene="GENE_A", target_gene="GENE_B", direction="A→B",
     )

@@ -211,6 +211,20 @@ class TestBlacklist:
         assert len(entries) == 1
         path.unlink()
 
+    def test_blacklist_preserves_positional_index(self):
+        """FASTA headers must use positional index, not sequential, so parsers
+        compute correct genomic coordinates via fragment_index_to_genomic."""
+        # 100bp gene at [1000, 1100), frag=20, step=20 → positions 0,1,2,3,4
+        # Blacklist [1040, 1060) skips position 2
+        # Headers should be :0, :1, :3, :4 (NOT :0, :1, :2, :3)
+        gene = _make_gene("A" * 100, start=1000)
+        bl = [BedRegion(chrom="chr1", start=1040, end=1060)]
+        path = generate_fragments(gene, fragment_size=20, step_size=20, blacklist=bl)
+        entries = _read_fasta(path)
+        headers = [e[0] for e in entries]
+        assert headers == ["TEST:0", "TEST:1", "TEST:3", "TEST:4"]
+        path.unlink()
+
     def test_blacklist_wrong_chrom_no_effect(self):
         """Blacklist on different chromosome has no effect (already filtered by CLI)."""
         gene = _make_gene("A" * 100, start=1000)

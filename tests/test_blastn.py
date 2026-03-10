@@ -55,17 +55,17 @@ class TestBuildBlastnCommand:
         assert "-max_target_seqs" in cmd
         assert "10" in cmd
         assert "-dust" in cmd
-        assert "no" in cmd
+        assert "yes" in cmd
 
         # Default params
         idx = cmd.index("-word_size")
-        assert cmd[idx + 1] == "11"
+        assert cmd[idx + 1] == "15"
         idx = cmd.index("-evalue")
-        assert cmd[idx + 1] == "0.1"
+        assert cmd[idx + 1] == "1e-3"
         idx = cmd.index("-reward")
-        assert cmd[idx + 1] == "2"
+        assert cmd[idx + 1] == "1"
         idx = cmd.index("-penalty")
-        assert cmd[idx + 1] == "-3"
+        assert cmd[idx + 1] == "-4"
 
     def test_sensitive_params(self, tmp_path):
         frags = tmp_path / "frags.fa"
