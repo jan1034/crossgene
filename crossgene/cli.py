@@ -132,7 +132,7 @@ def _run_direction(
 @click.option("--genes-gtf", default="references/homo_sapiens.109.genes.gtf", show_default=True, help="Path to gene annotation GTF")
 @click.option("--chrom-sizes", default="references/homo_sapiens.109.chrom.sizes", show_default=True, help="Chromosome sizes file")
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
-@click.option("--output-formats", default="bigwig,tsv,plot", show_default=True, help="Comma-separated: bigwig,tsv,plot")
+@click.option("--output-formats", default="bigwig,tsv,plot,bed", show_default=True, help="Comma-separated: bigwig,tsv,plot,bed")
 @click.option("--aligner", default="minimap2", show_default=True, type=click.Choice(["minimap2", "blastn"]), help="Alignment engine")
 @click.option("--minimap2-preset", default="auto", show_default=True, help="minimap2 preset (auto selects based on fragment size)")
 @click.option("--sensitive", is_flag=True, default=False, help="Tune aligner for moderate divergence")
