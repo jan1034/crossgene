@@ -4,9 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CrossGene is a Python tool that compares two gene sequences by fragmenting one gene, aligning fragments to another using minimap2, and producing similarity profiles (BigWig), detailed hit tables (TSV), and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A). Supports BED file overlay on circular plots (`--bed`) for annotation of repeats, regulatory regions, etc.
-
-**Status:** Implementation in progress (Step 1 complete). See artifacts/ANALYSIS.md, artifacts/ARCHITECTURE.md, and artifacts/IMPLEMENTATION.md.
+CrossGene is a Python tool that compares two gene sequences using direct BLASTN alignment (gene-vs-gene). It produces similarity profiles (BigWig), detailed hit tables (TSV), BED files, and circular visualizations (pycirclize). It performs bidirectional comparison (A→B and B→A). Supports BED file overlay on circular plots (`--bed`) for annotation of repeats, regulatory regions, etc.
 
 ## Development Environment
 
@@ -20,24 +18,24 @@ CrossGene is a Python tool that compares two gene sequences by fragmenting one g
 - Python 3.10+ (IDE configured for 3.11)
 - CLI: click
 - Gene extraction: pysam (FASTA), custom GTF parsing
-- Alignment: minimap2 (external, called via subprocess)
+- Alignment: BLASTN (BLAST+, called via subprocess)
 - Scoring: numpy
 - BigWig output: pyBigWig
 - Visualization: pycirclize + matplotlib
 - Data structures: dataclasses
-- Testing: pytest (planned)
+- Testing: pytest
 
-## Planned Module Architecture
+## Module Architecture
 
-Ten modules in `crossgene/`:
+Modules in `crossgene/`:
 - `cli.py` — Click entry point
 - `gene_extractor.py` — GTF lookup + FASTA extraction via pysam
-- `fragment.py` — Rolling window fragmentation
-- `align.py` — minimap2 subprocess wrapper
-- `parser.py` — PAF format parsing + coordinate translation
-- `scores.py` — Score aggregation (normalized mappability 0-100)
+- `blastn.py` — BLASTN wrapper: gene-vs-gene alignment, sequence masking
+- `parser_blast.py` — BLAST tabular output parser + coordinate translation
+- `scores.py` — HSP-based per-base scoring (best identity per base, 0-100)
 - `bigwig.py` — BigWig writer with real genomic coordinates (IGV-compatible)
-- `tsv_writer.py` — 15-column TSV output
+- `tsv_writer.py` — TSV output with evalue/bitscore columns
+- `bed_writer.py` — BED9 output for alignment hits
 - `visualize.py` — Circlize circular plot
 - `models.py` — GeneRecord, GeneFeature, AlignmentHit, BedRegion dataclasses
 - `bed_parser.py` — BED file parsing + region filtering/clipping
@@ -52,18 +50,32 @@ Located in `references/` (gitignored, ~2.1 GB):
 
 ## Key Design Decisions
 
-- Aligner: minimap2 (better for divergent sequences, native secondary alignments)
+- Aligner: BLASTN gene-vs-gene (no fragmentation, BLAST finds HSPs natively)
 - Bidirectional: runs A→B and B→A automatically
-- Similarity metric: normalized mappability score (0-100, mean of best-hit identity per base)
+- Similarity metric: per-base best HSP identity (0-100, max wins for overlapping HSPs)
 - Gene lookup: by gene_name field in GTF, first match if multiple
 - Strand handling: extract sense sequence, store original strand info
-- minimap2 preset: auto-selected based on fragment_size
-- Fragment defaults: size=50bp, step=1bp
+- Sensitivity modes: `--moderate`, `--sensitive`, `--divergent` (word_size/scoring presets)
+- Blacklist: hard-mask regions with N's before BLAST alignment
+- Filters: `--min-quality`, `--min-length`, `--min-bitscore`, `--max-evalue`
 
-## Workflow
+## Pipeline Flow
 
-Per user instructions, follow the phased workflow:
-1. **Analysis** → ANALYSIS.md (done)
-2. **Architecture** → ARCHITECTURE.md (done)
-3. **Implementation plan** → IMPLEMENTATION.md (done)
-4. **Implementation** — step by step with user review between steps (Step 1 complete)
+```
+Gene A sequence (full)
+    │
+    ▼
+BLASTN: gene A (query) → gene B (subject)
+    │
+    ▼
+Parse HSPs → list[AlignmentHit]
+    │
+    ├─► Filter by min_quality, min_length, max_evalue, min_bitscore
+    │
+    ├─► compute_scores() → BigWig (per-base best identity)
+    ├─► write_tsv()
+    ├─► write_hit_beds()
+    └─► circlize plot
+
+(repeat B→A direction)
+```

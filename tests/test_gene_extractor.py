@@ -183,10 +183,11 @@ class TestLoadFeatures:
 
 
 class TestReverseComplement:
-    def test_basic(self):
-        assert _reverse_complement("ACGT") == "ACGT"  # palindromic
-        assert _reverse_complement("AAAA") == "TTTT"
-        assert _reverse_complement("ATCG") == "CGAT"
-
-    def test_lowercase(self):
-        assert _reverse_complement("acgt") == "acgt"
+    @pytest.mark.parametrize("input_seq,expected", [
+        ("ACGT", "ACGT"),   # palindromic
+        ("AAAA", "TTTT"),
+        ("ATCG", "CGAT"),
+        ("acgt", "acgt"),   # lowercase
+    ])
+    def test_reverse_complement(self, input_seq, expected):
+        assert _reverse_complement(input_seq) == expected

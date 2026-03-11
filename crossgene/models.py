@@ -60,13 +60,15 @@ class AlignmentHit:
     # Alignment info
     strand: str  # '+' or '-'
     identity: float  # 0.0 - 1.0
-    query_coverage: float  # 0.0 - 1.0, fraction of query fragment that aligned
-    mapq: int  # mapping quality
+    query_coverage: float  # 0.0 - 1.0, fraction of query that aligned
+    mapq: int  # mapping quality (pseudo-MAPQ from bitscore)
     cigar: str  # CIGAR string
-    alignment_score: int  # AS tag value
+    alignment_score: int  # AS tag value or bitscore
     is_primary: bool  # primary vs secondary alignment
+    evalue: float = 0.0  # BLAST E-value
+    bitscore: float = 0.0  # BLAST bitscore
 
     # Metadata
-    query_gene: str  # gene name of query
-    target_gene: str  # gene name of target
-    direction: str  # "A→B" or "B→A"
+    query_gene: str = ""  # gene name of query
+    target_gene: str = ""  # gene name of target
+    direction: str = ""  # "A→B" or "B→A"

@@ -1,28 +1,24 @@
-"""Tests for parser_blast module."""
-
-from pathlib import Path
+"""Tests for parser_blast module (gene-vs-gene)."""
 
 import pytest
 
-from crossgene.models import AlignmentHit, GeneRecord
-from crossgene.parser_blast import parse_blast_tabular
+from crossgene.models import GeneRecord
+from crossgene.parser_blast import parse_blast_gene_vs_gene
 
 
 def _make_gene(name="GENE_A", chrom="chr1", start=1000, end=2000, strand="+") -> GeneRecord:
-    seq_len = end - start
     return GeneRecord(
         name=name, gene_id="G001", chrom=chrom,
         start=start, end=end, strand=strand,
-        sequence="A" * seq_len,
+        sequence="A" * (end - start),
     )
 
 
-# BLAST tabular line: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen sstrand
 def _blast_line(
-    qseqid="GENE_A:0", sseqid="GENE_B", pident="90.000", length="50",
-    mismatch="5", gapopen="0", qstart="1", qend="50",
-    sstart="101", send="150", evalue="1e-10", bitscore="80.0",
-    qlen="50", slen="1000", sstrand="plus",
+    qseqid="GENE_A", sseqid="GENE_B", pident="90.000", length="200",
+    mismatch="20", gapopen="0", qstart="51", qend="250",
+    sstart="101", send="300", evalue="1e-40", bitscore="180.0",
+    qlen="1000", slen="1000", sstrand="plus",
 ):
     return "\t".join([
         qseqid, sseqid, pident, length, mismatch, gapopen,
@@ -31,208 +27,115 @@ def _blast_line(
 
 
 class TestParseBasic:
-    def test_single_hit(self, tmp_path):
+    def test_single_hsp(self, tmp_path):
         tsv = tmp_path / "test.tsv"
         tsv.write_text(_blast_line() + "\n")
-
         query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
         target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, 0, "A→B")
 
         assert len(hits) == 1
         h = hits[0]
         assert h.query_gene == "GENE_A"
         assert h.target_gene == "GENE_B"
-        assert h.direction == "A→B"
         assert h.identity == 0.9
-        assert h.cigar == ""
         assert h.is_primary is True
+        assert h.evalue == pytest.approx(1e-40)
+        assert h.bitscore == 180.0
 
-    def test_multiple_hits(self, tmp_path):
+    def test_multiple_hsps_primary_secondary(self, tmp_path):
+        """Multiple HSPs: first is primary, rest secondary."""
         tsv = tmp_path / "test.tsv"
         lines = [
-            _blast_line(qseqid="GENE_A:0"),
-            _blast_line(qseqid="GENE_A:1", sstart="201", send="250"),
-            _blast_line(qseqid="GENE_A:2", sstart="301", send="350"),
+            _blast_line(qstart="1", qend="200", bitscore="90.0"),
+            _blast_line(qstart="300", qend="500", bitscore="70.0"),
+            _blast_line(qstart="600", qend="800", bitscore="80.0"),
         ]
         tsv.write_text("\n".join(lines) + "\n")
-
         query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
         target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, 0, "A→B")
         assert len(hits) == 3
+        assert hits[0].is_primary is True
+        assert hits[1].is_primary is False
+        assert hits[2].is_primary is False
 
 
-class TestIdentityFilter:
-    def test_filters_low_identity(self, tmp_path):
+class TestFilters:
+    @pytest.mark.parametrize("min_qual,filter_kwargs,expected_count", [
+        (30, {}, 1),                      # filters pident=20
+        (0, {"min_length": 25}, 1),       # filters length=20
+        (0, {"min_bitscore": 50.0}, 1),   # filters bitscore=10
+        (0, {"max_evalue": 0.01}, 1),     # filters evalue=0.5
+    ])
+    def test_filter(self, tmp_path, min_qual, filter_kwargs, expected_count):
         tsv = tmp_path / "test.tsv"
-        high_q = _blast_line(qseqid="GENE_A:0", pident="90.000")
-        low_q = _blast_line(qseqid="GENE_A:1", pident="20.000")
-        tsv.write_text(high_q + "\n" + low_q + "\n")
-
+        good = _blast_line()
+        bad = _blast_line(pident="20.000", length="20", bitscore="10.0", evalue="0.5", qstart="300", qend="319")
+        tsv.write_text(good + "\n" + bad + "\n")
         query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
         target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 30, "A→B")
-        assert len(hits) == 1
-        assert hits[0].identity == 0.9
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, min_qual, "A→B", **filter_kwargs)
+        assert len(hits) == expected_count
 
 
 class TestCoordinateTranslation:
-    def test_plus_strand_target(self, tmp_path):
-        """sstart=101, send=150 (1-based) → local [100, 150) → genomic [5100, 5150)."""
+    @pytest.mark.parametrize("gene_strand,qstart,qend,expected_start,expected_end", [
+        ("+", "51", "250", 1050, 1250),   # plus strand query
+        ("-", "51", "250", 1750, 1950),   # minus strand query
+    ])
+    def test_query_coords(self, tmp_path, gene_strand, qstart, qend, expected_start, expected_end):
         tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(sstart="101", send="150") + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
+        tsv.write_text(_blast_line(qstart=qstart, qend=qend) + "\n")
+        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, gene_strand)
         target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].target_start == 5100
-        assert hits[0].target_end == 5150
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, 0, "A→B")
+        assert hits[0].query_start == expected_start
+        assert hits[0].query_end == expected_end
 
-    def test_minus_strand_target(self, tmp_path):
-        """Minus-strand target: local [100, 150) → genomic [5850, 5900)."""
+    @pytest.mark.parametrize("gene_strand,sstart,send,sstrand,expected_start,expected_end,expected_strand", [
+        ("+", "101", "300", "plus", 5100, 5300, "+"),    # plus target, plus hit
+        ("-", "101", "300", "plus", 5700, 5900, "+"),    # minus target
+        ("+", "300", "101", "minus", 5100, 5300, "-"),   # minus strand BLAST hit
+    ])
+    def test_target_coords(self, tmp_path, gene_strand, sstart, send, sstrand,
+                           expected_start, expected_end, expected_strand):
         tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(sstart="101", send="150") + "\n")
-
+        tsv.write_text(_blast_line(sstart=sstart, send=send, sstrand=sstrand) + "\n")
         query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "-")
+        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, gene_strand)
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].target_start == 5850
-        assert hits[0].target_end == 5900
-
-    def test_query_coords_plus_strand(self, tmp_path):
-        """Fragment index 2, step 10 → sense [20,70) → genomic [1020, 1070)."""
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(qseqid="GENE_A:2") + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].query_start == 1020
-        assert hits[0].query_end == 1070
-
-    def test_query_coords_minus_strand(self, tmp_path):
-        """Minus-strand query: fragment 0 → genomic [1950, 2000)."""
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(qseqid="GENE_A:0") + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "-")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].query_start == 1950
-        assert hits[0].query_end == 2000
-
-    def test_minus_strand_blast_coords(self, tmp_path):
-        """BLAST minus strand: sstart > send → swap and convert."""
-        tsv = tmp_path / "test.tsv"
-        # sstart=150 > send=101 indicates minus strand hit
-        tsv.write_text(_blast_line(sstart="150", send="101", sstrand="minus") + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].target_start == 5100
-        assert hits[0].target_end == 5150
-        assert hits[0].strand == "-"
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, 0, "A→B")
+        assert hits[0].target_start == expected_start
+        assert hits[0].target_end == expected_end
+        assert hits[0].strand == expected_strand
 
 
 class TestMapqFromBitscore:
-    def test_max_bitscore_gets_60(self, tmp_path):
-        """Single hit: bitscore is max, so mapq = 60."""
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(bitscore="100.0") + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].mapq == 60
-
-    def test_half_bitscore(self, tmp_path):
-        """Two hits: one with max bitscore (60), other with half (30)."""
+    def test_mapq_scaling(self, tmp_path):
+        """Max bitscore → MAPQ 60, half bitscore → MAPQ 30."""
         tsv = tmp_path / "test.tsv"
         lines = [
-            _blast_line(qseqid="GENE_A:0", bitscore="100.0"),
-            _blast_line(qseqid="GENE_A:1", bitscore="50.0"),
+            _blast_line(bitscore="100.0", qstart="1", qend="200"),
+            _blast_line(bitscore="50.0", qstart="300", qend="500"),
         ]
         tsv.write_text("\n".join(lines) + "\n")
-
         query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
         target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
 
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
+        hits = parse_blast_gene_vs_gene(tsv, query_gene, target_gene, 0, "A→B")
         assert hits[0].mapq == 60
         assert hits[1].mapq == 30
 
 
-class TestStrandMapping:
-    def test_plus_strand(self, tmp_path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(sstrand="plus") + "\n")
-
-        query_gene = _make_gene()
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].strand == "+"
-
-    def test_minus_strand(self, tmp_path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text(_blast_line(sstrand="minus", sstart="150", send="101") + "\n")
-
-        query_gene = _make_gene()
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits[0].strand == "-"
-
-
-class TestPrimarySecondary:
-    def test_first_is_primary_rest_secondary(self, tmp_path):
-        """First HSP per query is primary, subsequent are secondary."""
-        tsv = tmp_path / "test.tsv"
-        lines = [
-            _blast_line(qseqid="GENE_A:0", sstart="101", send="150", bitscore="90.0"),
-            _blast_line(qseqid="GENE_A:0", sstart="201", send="250", bitscore="70.0"),
-            _blast_line(qseqid="GENE_A:1", sstart="301", send="350", bitscore="80.0"),
-        ]
-        tsv.write_text("\n".join(lines) + "\n")
-
-        query_gene = _make_gene("GENE_A", "chr1", 1000, 2000, "+")
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert len(hits) == 3
-        assert hits[0].is_primary is True   # first hit for GENE_A:0
-        assert hits[1].is_primary is False  # second hit for GENE_A:0
-        assert hits[2].is_primary is True   # first hit for GENE_A:1
-
-
 class TestEmptyOutput:
-    def test_empty_file(self, tmp_path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text("")
-
-        query_gene = _make_gene()
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits == []
-
-    def test_only_comments(self, tmp_path):
-        tsv = tmp_path / "test.tsv"
-        tsv.write_text("# comment line\n# another comment\n")
-
-        query_gene = _make_gene()
-        target_gene = _make_gene("GENE_B", "chr2", 5000, 6000, "+")
-
-        hits = parse_blast_tabular(tsv, query_gene, target_gene, 50, 10, 0, "A→B")
-        assert hits == []
+    def test_empty_or_comments(self, tmp_path):
+        for content in ["", "# comment line\n# another\n"]:
+            tsv = tmp_path / "test.tsv"
+            tsv.write_text(content)
+            hits = parse_blast_gene_vs_gene(tsv, _make_gene(), _make_gene("GENE_B", "chr2", 5000, 6000), 0, "A→B")
+            assert hits == []

@@ -124,8 +124,9 @@ crossgene \
 | Output dir | `--outdir` | `.` | Output directory |
 | Output formats | `--output-formats` | `bigwig,tsv,plot` | Comma-separated: `bigwig`, `tsv`, `plot` |
 | minimap2 preset | `--minimap2-preset` | `auto` | Override minimap2 preset (auto selects `-x sr` for fragments <=200 bp) |
+| Moderate mode | `--moderate` | off | Tune aligner for mild divergence (between default and `--sensitive`) |
 | Sensitive mode | `--sensitive` | off | Tune aligner for moderate divergence |
-| Divergent mode | `--divergent` | off | Tune aligner for high divergence / paralogs (mutually exclusive with `--sensitive`) |
+| Divergent mode | `--divergent` | off | Tune aligner for high divergence / paralogs |
 | BED overlay | `--bed` | none | BED file for annotation overlay on circular plot (repeatable, max 3) |
 | BED color | `--bed-color` | auto | Color for corresponding `--bed` file (default: darkorchid, teal, sienna) |
 | Verbose | `--verbose` / `-v` | off | Enable debug logging |
@@ -155,7 +156,16 @@ Steps 2–6 run in both directions (A→B and B→A).
 | `minimap2` (default) | Highly similar genes, fast runtime | Struggles with divergent paralogs (70–90% identity) |
 | `blastn` | Divergent paralogs, homology detection | Better sensitivity at lower identity; slower due to `makeblastdb` step |
 
-Both aligners support `--sensitive` and `--divergent` flags, which adjust internal parameters (seed size, scoring, e-value thresholds) for increased sensitivity. `--minimap2-preset` is ignored when using `--aligner blastn`.
+Both aligners support `--moderate`, `--sensitive`, and `--divergent` flags (mutually exclusive), which adjust internal parameters (seed size, scoring, e-value thresholds) for increasing sensitivity. `--minimap2-preset` is ignored when using `--aligner blastn`.
+
+#### Sensitivity levels
+
+| Level | Flag | Use case |
+|-------|------|----------|
+| Default | (none) | Highly similar genes (>95% identity) |
+| Moderate | `--moderate` | Mild divergence (~90–95% identity) |
+| Sensitive | `--sensitive` | Moderate divergence (~80–90% identity) |
+| Divergent | `--divergent` | High divergence / paralogs (~70–90% identity) |
 
 ### Similarity score
 

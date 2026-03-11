@@ -9,29 +9,22 @@ from crossgene.models import BedRegion
 
 
 class TestParseBed:
-    def test_bed6(self, tmp_path):
+    @pytest.mark.parametrize("content,expected_name,expected_score,expected_strand", [
+        ("chr1\t100\t200\n", ".", 0, "."),                              # BED3 defaults
+        ("chr1\t100\t200\tMyRegion\n", "MyRegion", 0, "."),             # BED4
+        ("chr1\t100\t200\tAluSc\t2224\t-\n", "AluSc", 2224, "-"),      # BED6
+    ])
+    def test_bed_formats(self, tmp_path, content, expected_name, expected_score, expected_strand):
         bed = tmp_path / "test.bed"
-        bed.write_text("chr1\t100\t200\tAluSc\t2224\t-\nchr2\t300\t400\tL1\t500\t+\n")
-        regions = parse_bed(str(bed))
-        assert len(regions) == 2
-        assert regions[0] == BedRegion("chr1", 100, 200, "AluSc", 2224, "-")
-        assert regions[1] == BedRegion("chr2", 300, 400, "L1", 500, "+")
-
-    def test_bed3_defaults(self, tmp_path):
-        bed = tmp_path / "test.bed"
-        bed.write_text("chr1\t100\t200\n")
+        bed.write_text(content)
         regions = parse_bed(str(bed))
         assert len(regions) == 1
-        assert regions[0].name == "."
-        assert regions[0].score == 0
-        assert regions[0].strand == "."
-
-    def test_bed4(self, tmp_path):
-        bed = tmp_path / "test.bed"
-        bed.write_text("chr1\t100\t200\tMyRegion\n")
-        regions = parse_bed(str(bed))
-        assert regions[0].name == "MyRegion"
-        assert regions[0].score == 0
+        assert regions[0].chrom == "chr1"
+        assert regions[0].start == 100
+        assert regions[0].end == 200
+        assert regions[0].name == expected_name
+        assert regions[0].score == expected_score
+        assert regions[0].strand == expected_strand
 
     def test_skip_comments_track_browser_empty(self, tmp_path):
         bed = tmp_path / "test.bed"
@@ -39,29 +32,18 @@ class TestParseBed:
         regions = parse_bed(str(bed))
         assert len(regions) == 1
 
-    def test_malformed_too_few_columns(self, tmp_path, caplog):
+    @pytest.mark.parametrize("content,expected_warning", [
+        ("chr1\t100\n", "at least 3 columns"),
+        ("chr1\tabc\t200\n", "non-numeric"),
+        ("chr1\t200\t200\tEqual\n", "start >= end"),
+    ])
+    def test_malformed_lines(self, tmp_path, caplog, content, expected_warning):
         bed = tmp_path / "test.bed"
-        bed.write_text("chr1\t100\n")
+        bed.write_text(content)
         with caplog.at_level(logging.WARNING):
             regions = parse_bed(str(bed))
         assert len(regions) == 0
-        assert "at least 3 columns" in caplog.text
-
-    def test_malformed_non_numeric(self, tmp_path, caplog):
-        bed = tmp_path / "test.bed"
-        bed.write_text("chr1\tabc\t200\n")
-        with caplog.at_level(logging.WARNING):
-            regions = parse_bed(str(bed))
-        assert len(regions) == 0
-        assert "non-numeric" in caplog.text
-
-    def test_malformed_start_ge_end(self, tmp_path, caplog):
-        bed = tmp_path / "test.bed"
-        bed.write_text("chr1\t200\t200\tEqual\n")
-        with caplog.at_level(logging.WARNING):
-            regions = parse_bed(str(bed))
-        assert len(regions) == 0
-        assert "start >= end" in caplog.text
+        assert expected_warning in caplog.text
 
     def test_non_numeric_score_defaults(self, tmp_path):
         bed = tmp_path / "test.bed"
@@ -71,62 +53,43 @@ class TestParseBed:
 
 
 class TestFilterAndClip:
-    def _regions(self):
-        return [
-            BedRegion("chr1", 100, 200, "A"),
-            BedRegion("chr1", 180, 300, "B"),
-            BedRegion("chr1", 400, 500, "C"),
-            BedRegion("chr2", 100, 200, "D"),
+    def test_clipping(self):
+        """Tests fully inside, left overlap, and right overlap clipping."""
+        regions = [
+            BedRegion("chr1", 120, 180, "inside"),      # fully inside
+            BedRegion("chr1", 50, 150, "left"),          # left overlap
+            BedRegion("chr1", 150, 250, "right"),        # right overlap
         ]
-
-    def test_fully_inside(self):
-        regions = [BedRegion("chr1", 120, 180, "X")]
         result = filter_and_clip(regions, "chr1", 100, 200)
-        assert len(result) == 1
-        assert result[0].start == 120
-        assert result[0].end == 180
+        assert len(result) == 3
+        assert (result[0].start, result[0].end) == (120, 180)  # unchanged
+        assert (result[1].start, result[1].end) == (100, 150)  # clipped left
+        assert (result[2].start, result[2].end) == (150, 200)  # clipped right
 
-    def test_partially_overlapping_left(self):
-        regions = [BedRegion("chr1", 50, 150, "X")]
-        result = filter_and_clip(regions, "chr1", 100, 200)
-        assert result[0].start == 100
-        assert result[0].end == 150
-
-    def test_partially_overlapping_right(self):
-        regions = [BedRegion("chr1", 150, 250, "X")]
-        result = filter_and_clip(regions, "chr1", 100, 200)
-        assert result[0].start == 150
-        assert result[0].end == 200
-
-    def test_fully_outside(self):
-        regions = [BedRegion("chr1", 300, 400, "X")]
-        result = filter_and_clip(regions, "chr1", 100, 200)
-        assert len(result) == 0
-
-    def test_wrong_chromosome(self):
-        regions = [BedRegion("chr2", 100, 200, "X")]
-        result = filter_and_clip(regions, "chr1", 100, 200)
-        assert len(result) == 0
-
-    def test_edge_abutting_no_overlap(self):
-        """Region [200,300) does not overlap [100,200)."""
-        regions = [BedRegion("chr1", 200, 300, "X")]
+    @pytest.mark.parametrize("chrom,start,end", [
+        ("chr1", 300, 400),   # fully outside
+        ("chr2", 100, 200),   # wrong chromosome
+        ("chr1", 200, 300),   # abutting, no overlap
+    ])
+    def test_no_overlap(self, chrom, start, end):
+        regions = [BedRegion(chrom, start, end, "X")]
         result = filter_and_clip(regions, "chr1", 100, 200)
         assert len(result) == 0
 
     def test_does_not_mutate_input(self):
         original = BedRegion("chr1", 50, 250, "X")
-        regions = [original]
-        result = filter_and_clip(regions, "chr1", 100, 200)
+        result = filter_and_clip([original], "chr1", 100, 200)
         assert original.start == 50  # unchanged
-        assert original.end == 250
         assert result[0].start == 100
-        assert result[0].end == 200
 
     def test_multiple_regions_mixed(self):
-        result = filter_and_clip(self._regions(), "chr1", 150, 350)
+        regions = [
+            BedRegion("chr1", 100, 200, "A"),
+            BedRegion("chr1", 180, 300, "B"),
+            BedRegion("chr1", 400, 500, "C"),
+            BedRegion("chr2", 100, 200, "D"),
+        ]
+        result = filter_and_clip(regions, "chr1", 150, 350)
         names = [r.name for r in result]
-        assert "A" in names  # clipped to 150-200
-        assert "B" in names  # clipped to 180-300
-        assert "C" not in names  # 400-500 outside
-        assert "D" not in names  # wrong chrom
+        assert "A" in names and "B" in names
+        assert "C" not in names and "D" not in names

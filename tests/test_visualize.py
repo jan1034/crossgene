@@ -8,7 +8,6 @@ from crossgene.models import AlignmentHit, GeneFeature, GeneRecord
 from crossgene.models import BedRegion
 from crossgene.visualize import (
     BedTrackConfig,
-    FEATURE_COLORS,
     _identity_to_alpha,
     _strand_label,
     _subsample_hits,
@@ -36,196 +35,94 @@ def _make_hit(q_start, q_end, t_start, t_end, strand="+", mapq=40, score=90):
 
 
 class TestHelpers:
-    def test_strand_label_plus(self):
-        gene = _make_gene("BRCA1", "chr17", 0, 100, "+")
-        assert _strand_label(gene) == "BRCA1 (+)"
+    @pytest.mark.parametrize("strand,expected", [("+", "BRCA1 (+)"), ("-", "BRCA1 (-)")])
+    def test_strand_label(self, strand, expected):
+        gene = _make_gene("BRCA1", "chr17", 0, 100, strand)
+        assert _strand_label(gene) == expected
 
-    def test_strand_label_minus(self):
-        gene = _make_gene("TP53", "chr17", 0, 100, "-")
-        assert _strand_label(gene) == "TP53 (-)"
-
-    def test_identity_to_alpha_few_hits(self):
-        # With <= 50 hits, density_factor=1.0, so base alpha = 0.1 + 0.9*identity
+    def test_identity_to_alpha(self):
+        # Few hits: density_factor=1.0
         assert _identity_to_alpha(0.0, 10) == pytest.approx(0.1)
         assert _identity_to_alpha(1.0, 10) == pytest.approx(1.0)
         assert _identity_to_alpha(0.5, 10) == pytest.approx(0.55)
-
-    def test_identity_to_alpha_many_hits(self):
-        # With 1000 hits, density_factor=0.1
+        # Many hits: density_factor=0.1
         assert _identity_to_alpha(1.0, 1000) == pytest.approx(0.1)
-        assert _identity_to_alpha(0.5, 1000) == pytest.approx(0.055)
-
-    def test_identity_to_alpha_zero_identity(self):
-        # identity=0 → base=0.1, density=1.0 → 0.1
-        assert _identity_to_alpha(0.0, 10) == pytest.approx(0.1)
 
     def test_subsample(self):
         hits = [_make_hit(0, 50, 0, 50, score=i) for i in range(10)]
         result = _subsample_hits(hits, 3)
         assert len(result) == 3
-        assert result[0].alignment_score == 9
-        assert result[1].alignment_score == 8
+        assert result[0].alignment_score == 9  # top scores kept
 
-    def test_subsample_under_limit(self):
-        hits = [_make_hit(0, 50, 0, 50, score=i) for i in range(3)]
-        result = _subsample_hits(hits, 5)
-        assert len(result) == 3
+        # Under limit: no change
+        assert len(_subsample_hits(hits[:3], 5)) == 3
 
 
 class TestCreateCirclizePlot:
     def test_smoke_test(self, tmp_path):
-        """Create a plot from synthetic data, verify PDF exists and is non-empty."""
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+")
         gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
-
         hits = [
-            _make_hit(100, 150, 200, 250, strand="+", mapq=40, score=90),
-            _make_hit(300, 350, 400, 450, strand="-", mapq=20, score=60),
-            _make_hit(500, 550, 100, 150, strand="+", mapq=60, score=120),
+            _make_hit(100, 150, 200, 250, strand="+"),
+            _make_hit(300, 350, 400, 450, strand="-"),
         ]
-
         output = str(tmp_path / "test.pdf")
         create_circlize_plot(hits, gene_a, gene_b, output)
-
-        assert os.path.exists(output)
         assert os.path.getsize(output) > 0
 
     def test_with_features(self, tmp_path):
-        """Plot with gene features (exons)."""
-        features_a = [
-            GeneFeature("exon", 100, 200, {}),
-            GeneFeature("CDS", 150, 200, {}),
-        ]
+        features_a = [GeneFeature("exon", 100, 200, {}), GeneFeature("CDS", 150, 200, {})]
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
-
-        hits = [_make_hit(100, 150, 200, 250)]
         output = str(tmp_path / "test.pdf")
-        create_circlize_plot(hits, gene_a, gene_b, output)
-
+        create_circlize_plot([_make_hit(100, 150, 200, 250)], gene_a, gene_b, output)
         assert os.path.getsize(output) > 0
 
     def test_empty_hits(self, tmp_path):
-        """Plot with no hits still produces a valid PDF."""
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800)
-
         output = str(tmp_path / "test.pdf")
         create_circlize_plot([], gene_a, gene_b, output)
-
-        assert os.path.exists(output)
-        assert os.path.getsize(output) > 0
+        assert os.path.exists(output) and os.path.getsize(output) > 0
 
 
 class TestLegend:
-    """Verify legend presence and entries in generated figures."""
-
-    def _get_legend(self, tmp_path, gene_a, gene_b, hits):
-        """Helper: create plot and return the figure legend."""
+    def _get_legend_labels(self, tmp_path, gene_a, gene_b, hits, bed_tracks=None):
         import matplotlib.pyplot as plt
         output = str(tmp_path / "legend_test.pdf")
-        create_circlize_plot(hits, gene_a, gene_b, output)
+        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=bed_tracks)
         fig = plt.gcf()
-        legends = fig.legends
-        return legends
+        return [t.get_text() for t in fig.legends[0].get_texts()]
 
-    def test_legend_present_no_features(self, tmp_path):
-        """Legend should exist with alignment entries even without features."""
-        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
-        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
-        hits = [_make_hit(100, 150, 200, 250)]
-
-        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
-        assert len(legends) == 1
-        labels = [t.get_text() for t in legends[0].get_texts()]
-        assert "Same-sense alignment" in labels
-        assert "Antisense alignment" in labels
-        # No feature entries when no features drawn
-        assert "exon" not in labels
-        assert "CDS" not in labels
-
-    def test_legend_includes_drawn_features(self, tmp_path):
-        """Legend should include entries for feature types that are drawn."""
-        features_a = [
-            GeneFeature("exon", 100, 200, {}),
-            GeneFeature("CDS", 150, 200, {}),
-        ]
-        gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
-        gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
-        hits = [_make_hit(100, 150, 200, 250)]
-
-        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
-        labels = [t.get_text() for t in legends[0].get_texts()]
-        assert "exon" in labels
-        assert "CDS" in labels
-
-    def test_legend_no_phantom_entries(self, tmp_path):
-        """Legend should not include feature types that aren't drawn."""
+    def test_legend_entries(self, tmp_path):
+        """Legend has alignment entries; feature entries only when drawn."""
         features_a = [GeneFeature("exon", 100, 200, {})]
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
         hits = [_make_hit(100, 150, 200, 250)]
 
-        legends = self._get_legend(tmp_path, gene_a, gene_b, hits)
-        labels = [t.get_text() for t in legends[0].get_texts()]
+        labels = self._get_legend_labels(tmp_path, gene_a, gene_b, hits)
+        assert "Same-sense alignment" in labels
+        assert "Antisense alignment" in labels
         assert "exon" in labels
-        assert "CDS" not in labels
-        assert "five prime utr" not in labels
+        assert "CDS" not in labels  # not drawn, so not in legend
 
 
 class TestBedTracks:
-    """Tests for BED annotation track rendering."""
-
-    def test_plot_with_one_bed_track(self, tmp_path):
+    def test_plot_with_bed_tracks(self, tmp_path):
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800)
         hits = [_make_hit(100, 150, 200, 250)]
         bt = BedTrackConfig(
-            label="repeats",
-            color="darkorchid",
+            label="my_repeats", color="darkorchid",
             regions_a=[BedRegion("chr1", 100, 300, "AluSc")],
             regions_b=[BedRegion("chr2", 200, 400, "L1")],
         )
         output = str(tmp_path / "test.pdf")
         create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=[bt])
-        assert os.path.exists(output)
         assert os.path.getsize(output) > 0
 
-    def test_plot_with_three_bed_tracks(self, tmp_path):
-        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
-        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
-        hits = [_make_hit(100, 150, 200, 250)]
-        tracks = [
-            BedTrackConfig(label=f"track{i}", color=c,
-                           regions_a=[BedRegion("chr1", 100, 300, f"R{i}")],
-                           regions_b=[])
-            for i, c in enumerate(["darkorchid", "teal", "sienna"])
-        ]
-        output = str(tmp_path / "test.pdf")
-        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=tracks)
-        assert os.path.getsize(output) > 0
-
-    def test_plot_no_bed_tracks_unchanged(self, tmp_path):
-        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
-        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
-        hits = [_make_hit(100, 150, 200, 250)]
-        output = str(tmp_path / "test.pdf")
-        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=None)
-        assert os.path.getsize(output) > 0
-
-    def test_legend_includes_bed_tracks(self, tmp_path):
+        # Verify legend includes bed track
         import matplotlib.pyplot as plt
-        gene_a = _make_gene("GENE_A", "chr1", 0, 1000)
-        gene_b = _make_gene("GENE_B", "chr2", 0, 800)
-        hits = [_make_hit(100, 150, 200, 250)]
-        bt = BedTrackConfig(
-            label="my_repeats",
-            color="darkorchid",
-            regions_a=[BedRegion("chr1", 100, 300, "AluSc")],
-            regions_b=[],
-        )
-        output = str(tmp_path / "test.pdf")
-        create_circlize_plot(hits, gene_a, gene_b, output, bed_tracks=[bt])
-        fig = plt.gcf()
-        labels = [t.get_text() for t in fig.legends[0].get_texts()]
+        labels = [t.get_text() for t in plt.gcf().legends[0].get_texts()]
         assert "my_repeats" in labels

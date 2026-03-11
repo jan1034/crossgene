@@ -10,13 +10,10 @@ from pathlib import Path
 import click
 
 from crossgene import __version__
-from crossgene.align import AlignParams, align_fragments, check_minimap2, write_target_fasta
 from crossgene.bigwig import write_bigwig
-from crossgene.blastn import BlastParams, align_fragments_blastn, check_blastn
-from crossgene.fragment import generate_fragments
+from crossgene.blastn import BlastParams, align_genes, check_blastn
 from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene
-from crossgene.parser import parse_paf
-from crossgene.parser_blast import parse_blast_tabular
+from crossgene.parser_blast import parse_blast_gene_vs_gene
 from crossgene.scores import compute_scores
 from crossgene.tsv_writer import write_tsv
 from crossgene.bed_parser import filter_and_clip, parse_bed
@@ -46,51 +43,37 @@ def _parse_formats(output_formats: str) -> set[str]:
 
 
 def _run_direction(
-    query_gene, target_gene, fragment_size, step_size, min_quality,
-    align_params, chrom_sizes, outdir, formats, direction_label, aligner="minimap2",
+    query_gene, target_gene, min_quality, blast_params,
+    chrom_sizes, outdir, formats, direction_label,
     min_mapq=0, blacklist_regions=None, bed_all_hits=False,
+    min_length=25, min_bitscore=0.0, max_evalue=float("inf"),
 ) -> tuple[list, list[Path]]:
-    """Run one direction of the comparison pipeline. Returns (hits, temp_files)."""
-    temp_files: list[Path] = []
-
+    """Run one direction of the gene-vs-gene BLAST pipeline."""
     logger.info(
-        "Direction %s: fragmenting %s (%d bp, step=%d)",
+        "Direction %s: %s (%d bp) → %s (%d bp)",
         direction_label, query_gene.name,
-        len(query_gene.sequence), step_size,
+        len(query_gene.sequence), target_gene.name,
+        len(target_gene.sequence),
     )
-    frags_path = generate_fragments(query_gene, fragment_size, step_size, blacklist=blacklist_regions)
-    temp_files.append(frags_path)
 
-    target_path = write_target_fasta(target_gene)
-    temp_files.append(target_path)
+    # BLASTN gene-vs-gene
+    logger.info("Running BLASTN %s vs %s...", query_gene.name, target_gene.name)
+    tsv_path, temp_files = align_genes(
+        query_gene, target_gene, blast_params,
+        blacklist_regions=blacklist_regions,
+    )
 
-    if aligner == "blastn":
-        logger.info("Aligning fragments to %s with BLASTN...", target_gene.name)
-        blast_params = BlastParams(
-            fragment_size=fragment_size,
-            max_secondary=align_params.max_secondary,
-            sensitive=align_params.sensitive,
-            divergent=align_params.divergent,
-        )
-        tsv_path, db_files = align_fragments_blastn(frags_path, target_path, blast_params)
-        temp_files.extend(db_files)
-        temp_files.append(tsv_path)
-        hits = parse_blast_tabular(
-            tsv_path, query_gene, target_gene,
-            fragment_size, step_size, min_quality, direction_label,
-            min_mapq=min_mapq,
-        )
-    else:
-        logger.info("Aligning fragments to %s with minimap2...", target_gene.name)
-        paf_path = align_fragments(frags_path, target_path, align_params)
-        temp_files.append(paf_path)
-        hits = parse_paf(
-            paf_path, query_gene, target_gene,
-            fragment_size, step_size, min_quality, direction_label,
-            min_mapq=min_mapq,
-        )
+    # Parse HSPs
+    hits = parse_blast_gene_vs_gene(
+        tsv_path, query_gene, target_gene,
+        min_quality, direction_label,
+        min_mapq=min_mapq,
+        min_length=min_length,
+        min_bitscore=min_bitscore,
+        max_evalue=max_evalue,
+    )
 
-    logger.info("Found %d hits passing quality filter", len(hits))
+    logger.info("Found %d HSPs passing filters", len(hits))
 
     if not hits:
         logger.warning("No alignments found for %s", direction_label)
@@ -98,16 +81,17 @@ def _run_direction(
     # Output file naming: QUERY_vs_TARGET
     prefix = f"{query_gene.name}_vs_{target_gene.name}"
 
+    # BigWig: per-base best identity from HSPs
     if "bigwig" in formats:
-        scores = compute_scores(hits, query_gene, fragment_size, step_size)
+        scores = compute_scores(hits, query_gene)
         bw_path = os.path.join(outdir, f"{prefix}.mappability.bw")
         write_bigwig(scores, query_gene.chrom, query_gene.start, chrom_sizes, bw_path)
         logger.info("Wrote BigWig: %s", bw_path)
 
     if "tsv" in formats:
-        tsv_path = os.path.join(outdir, f"{prefix}.hits.tsv")
-        write_tsv(hits, tsv_path)
-        logger.info("Wrote TSV: %s (%d rows)", tsv_path, len(hits))
+        tsv_out = os.path.join(outdir, f"{prefix}.hits.tsv")
+        write_tsv(hits, tsv_out)
+        logger.info("Wrote TSV: %s (%d rows)", tsv_out, len(hits))
 
     if "bed" in formats:
         from crossgene.bed_writer import write_hit_beds
@@ -124,40 +108,42 @@ def _run_direction(
 @click.command()
 @click.option("--gene-a", required=True, help="First gene name (e.g., BRCA1)")
 @click.option("--gene-b", required=True, help="Second gene name (e.g., BRCA2)")
-@click.option("--fragment-size", default=50, show_default=True, help="Fragment length in bp")
-@click.option("--step-size", default=25, show_default=True, help="Step between fragments in bp")
 @click.option("--min-quality", default=30, show_default=True, help="Minimum identity (0-100) to report a hit")
-@click.option("--max-secondary", default=10, show_default=True, help="Max secondary alignments per fragment")
+@click.option("--max-secondary", default=10, show_default=True, help="Max HSPs per gene pair")
 @click.option("--genome", default="references/homo_sapiens.109.mainChr.fa", show_default=True, help="Path to genome FASTA")
 @click.option("--genes-gtf", default="references/homo_sapiens.109.genes.gtf", show_default=True, help="Path to gene annotation GTF")
 @click.option("--chrom-sizes", default="references/homo_sapiens.109.chrom.sizes", show_default=True, help="Chromosome sizes file")
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
 @click.option("--output-formats", default="bigwig,tsv,plot,bed", show_default=True, help="Comma-separated: bigwig,tsv,plot,bed")
-@click.option("--aligner", default="minimap2", show_default=True, type=click.Choice(["minimap2", "blastn"]), help="Alignment engine")
-@click.option("--minimap2-preset", default="auto", show_default=True, help="minimap2 preset (auto selects based on fragment size)")
-@click.option("--sensitive", is_flag=True, default=False, help="Tune aligner for moderate divergence")
-@click.option("--divergent", is_flag=True, default=False, help="Tune aligner for high divergence / paralogs")
+@click.option("--moderate", is_flag=True, default=False, help="Tune BLASTN for mild divergence")
+@click.option("--sensitive", is_flag=True, default=False, help="Tune BLASTN for moderate divergence")
+@click.option("--divergent", is_flag=True, default=False, help="Tune BLASTN for high divergence / paralogs")
 @click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
 @click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
 @click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
-@click.option("--min-mapq", default=0, show_default=True, help="Minimum MAPQ to report a hit")
-@click.option("--blacklist", default=None, type=click.Path(exists=True), help="BED file of regions to exclude from fragment generation.")
-@click.option("--bed-all-hits", is_flag=True, default=False, help="Include secondary alignments in hit BED export (default: primary only).")
+@click.option("--min-mapq", default=0, show_default=True, help="Minimum pseudo-MAPQ (derived from bitscore) to report a hit")
+@click.option("--min-length", default=25, show_default=True, help="Minimum HSP alignment length to report")
+@click.option("--min-bitscore", default=0.0, show_default=True, help="Minimum bitscore to report a hit")
+@click.option("--max-evalue", default=float("inf"), show_default=True, help="Maximum E-value to report a hit")
+@click.option("--blacklist", default=None, type=click.Path(exists=True), help="BED file of regions to mask with N's before alignment.")
+@click.option("--bed-all-hits", is_flag=True, default=False, help="Include secondary HSPs in hit BED export (default: primary only).")
 @click.option("--bed", "bed_files", multiple=True, type=click.Path(exists=True), help="BED file for annotation overlay on circular plot (repeatable, max 3).")
 @click.option("--bed-color", "bed_colors", multiple=True, type=str, help="Color for corresponding --bed file (default: auto-assigned).")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 @click.pass_context
-def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_secondary,
-         genome, genes_gtf, chrom_sizes, outdir, output_formats, aligner, minimap2_preset,
-         sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, strict, min_mapq, blacklist, bed_all_hits, bed_files, bed_colors, verbose):
-    """Compare two gene sequences by fragment alignment.
+def main(ctx, gene_a, gene_b, min_quality, max_secondary,
+         genome, genes_gtf, chrom_sizes, outdir, output_formats,
+         moderate, sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
+         flanking, strict, min_mapq, min_length, min_bitscore, max_evalue,
+         blacklist, bed_all_hits,
+         bed_files, bed_colors, verbose):
+    """Compare two gene sequences using BLASTN.
 
-    Fragments one gene, aligns to another using minimap2 or BLASTN, and produces
-    similarity profiles (BigWig), hit tables (TSV), and circular visualizations.
-    Runs bidirectional comparison (A->B and B->A).
+    Runs BLASTN directly with gene A as query against gene B as subject,
+    then reverses. Produces similarity profiles (BigWig), hit tables (TSV),
+    and circular visualizations. Bidirectional comparison (A->B and B->A).
     """
     t0 = time.time()
     _setup_logging(verbose)
@@ -188,12 +174,9 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
     if bed_files and "plot" not in formats:
         logger.warning("--bed files provided but 'plot' not in output formats — BED tracks will be ignored.")
 
-    # Validate aligner
+    # Validate BLASTN is available
     try:
-        if aligner == "blastn":
-            check_blastn()
-        else:
-            check_minimap2()
+        check_blastn()
     except RuntimeError as e:
         raise click.ClickException(str(e))
 
@@ -241,13 +224,13 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
         blacklist_all = parse_bed(blacklist)
         logger.info("Blacklist: loaded %d regions from %s", len(blacklist_all), blacklist)
 
-    if sensitive and divergent:
-        raise click.ClickException("--sensitive and --divergent are mutually exclusive")
+    mode_count = sum([moderate, sensitive, divergent])
+    if mode_count > 1:
+        raise click.ClickException("--moderate, --sensitive, and --divergent are mutually exclusive")
 
-    align_params = AlignParams(
-        fragment_size=fragment_size,
+    blast_params = BlastParams(
         max_secondary=max_secondary,
-        minimap2_preset=minimap2_preset,
+        moderate=moderate,
         sensitive=sensitive,
         divergent=divergent,
     )
@@ -271,19 +254,21 @@ def main(ctx, gene_a, gene_b, fragment_size, step_size, min_quality, max_seconda
 
     # Direction A→B
     hits_ab, temps = _run_direction(
-        rec_a, rec_b, fragment_size, step_size, min_quality,
-        align_params, chrom_sizes, outdir, formats, "A→B", aligner,
+        rec_a, rec_b, min_quality, blast_params,
+        chrom_sizes, outdir, formats, "A→B",
         min_mapq=min_mapq, blacklist_regions=blacklist_a,
         bed_all_hits=bed_all_hits,
+        min_length=min_length, min_bitscore=min_bitscore, max_evalue=max_evalue,
     )
     all_temp_files.extend(temps)
 
     # Direction B→A
     hits_ba, temps = _run_direction(
-        rec_b, rec_a, fragment_size, step_size, min_quality,
-        align_params, chrom_sizes, outdir, formats, "B→A", aligner,
+        rec_b, rec_a, min_quality, blast_params,
+        chrom_sizes, outdir, formats, "B→A",
         min_mapq=min_mapq, blacklist_regions=blacklist_b,
         bed_all_hits=bed_all_hits,
+        min_length=min_length, min_bitscore=min_bitscore, max_evalue=max_evalue,
     )
     all_temp_files.extend(temps)
 

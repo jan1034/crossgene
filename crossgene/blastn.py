@@ -1,4 +1,4 @@
-"""BLASTN alignment wrapper."""
+"""BLASTN alignment wrapper for gene-vs-gene comparison."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from crossgene.models import BedRegion, GeneRecord
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,8 +18,8 @@ logger = logging.getLogger(__name__)
 class BlastParams:
     """Parameters for BLASTN alignment."""
 
-    fragment_size: int = 50
-    max_secondary: int = 10  # maps to max_target_seqs
+    max_secondary: int = 10  # maps to max_target_seqs / max_hsps
+    moderate: bool = False
     sensitive: bool = False
     divergent: bool = False
 
@@ -36,13 +38,43 @@ def check_blastn() -> None:
             )
 
 
+def write_fasta(gene: GeneRecord, prefix: str = "gene") -> Path:
+    """Write a gene's sequence to a temporary FASTA file."""
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".fa", prefix=f"{prefix}_{gene.name}_", delete=False
+    )
+    tmp.write(f">{gene.name}\n{gene.sequence}\n")
+    tmp.close()
+    return Path(tmp.name)
+
+
+def mask_sequence(sequence: str, regions: list[BedRegion], gene_start: int) -> str:
+    """Replace blacklisted regions with N's in the gene sequence.
+
+    Args:
+        sequence: Gene sequence string.
+        regions: BedRegions already filtered/clipped to gene bounds.
+        gene_start: Genomic start of the gene (for coordinate offset).
+
+    Returns:
+        Masked sequence with N's replacing blacklisted bases.
+    """
+    seq = list(sequence)
+    for region in regions:
+        local_start = region.start - gene_start
+        local_end = region.end - gene_start
+        for i in range(max(0, local_start), min(len(seq), local_end)):
+            seq[i] = 'N'
+    return ''.join(seq)
+
+
 def _build_blastn_command(
-    fragment_fasta: Path, db_path: Path, output_tsv: Path, params: BlastParams
+    query_fasta: Path, db_path: Path, output_tsv: Path, params: BlastParams
 ) -> list[str]:
     """Build the blastn command line with tabular output."""
     cmd = [
         "blastn",
-        "-query", str(fragment_fasta),
+        "-query", str(query_fasta),
         "-db", str(db_path),
         "-out", str(output_tsv),
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen "
@@ -71,6 +103,15 @@ def _build_blastn_command(
             "-gapextend", "1",
             "-evalue", "1",
         ])
+    elif params.moderate:
+        cmd.extend([
+            "-word_size", "11",
+            "-reward", "1",
+            "-penalty", "-2",
+            "-gapopen", "1",
+            "-gapextend", "1",
+            "-evalue", "0.01",
+        ])
     else:
         cmd.extend([
             "-word_size", "15",
@@ -88,7 +129,6 @@ def _make_blast_db(target_fasta: Path) -> tuple[Path, list[Path]]:
     """Run makeblastdb on the target FASTA.
 
     Returns (db_path, list_of_db_files_to_clean).
-    The db_path is the same as target_fasta (BLAST uses it as the base name).
     """
     cmd = [
         "makeblastdb",
@@ -109,7 +149,6 @@ def _make_blast_db(target_fasta: Path) -> tuple[Path, list[Path]]:
             f"makeblastdb failed (exit {result.returncode}):\n{result.stderr}"
         )
 
-    # makeblastdb creates files with extensions .ndb, .nhr, .nin, .not, .nsq, .ntf, .nto
     db_extensions = [".ndb", ".nhr", ".nin", ".not", ".nsq", ".ntf", ".nto"]
     db_files = [
         Path(str(target_fasta) + ext)
@@ -120,23 +159,59 @@ def _make_blast_db(target_fasta: Path) -> tuple[Path, list[Path]]:
     return target_fasta, db_files
 
 
-def align_fragments_blastn(
-    fragment_fasta: Path, target_fasta: Path, params: BlastParams
+def align_genes(
+    query_gene: GeneRecord,
+    target_gene: GeneRecord,
+    params: BlastParams,
+    blacklist_regions: list[BedRegion] | None = None,
 ) -> tuple[Path, list[Path]]:
-    """Full BLASTN pipeline: makeblastdb -> blastn -> return (tsv_path, temp_files).
+    """Run BLASTN gene-vs-gene alignment.
 
-    Returns the path to the output TSV and a list of temporary DB files to clean up.
-    Raises RuntimeError if any step fails.
+    Writes query and target to temp FASTAs, builds a BLAST DB from the target,
+    and runs BLASTN with the query against it.
+
+    If blacklist_regions are provided, the query sequence is masked with N's
+    at those positions before alignment.
+
+    Returns (tsv_path, temp_files_to_clean).
     """
     check_blastn()
 
-    # Build BLAST database
+    temp_files: list[Path] = []
+
+    # Write query FASTA (with optional blacklist masking)
+    if blacklist_regions:
+        masked_seq = mask_sequence(
+            query_gene.sequence, blacklist_regions, query_gene.start
+        )
+        # Create a temporary gene record with masked sequence for FASTA writing
+        masked_gene = GeneRecord(
+            name=query_gene.name, gene_id=query_gene.gene_id,
+            chrom=query_gene.chrom, start=query_gene.start, end=query_gene.end,
+            strand=query_gene.strand, sequence=masked_seq,
+            features=query_gene.features,
+            gene_body_start=query_gene.gene_body_start,
+            gene_body_end=query_gene.gene_body_end,
+        )
+        query_fasta = write_fasta(masked_gene, prefix="query")
+        n_count = sum(1 for a, b in zip(query_gene.sequence, masked_seq) if a != b)
+        logger.info("Blacklist: masked %d bases in %s query sequence", n_count, query_gene.name)
+    else:
+        query_fasta = write_fasta(query_gene, prefix="query")
+    temp_files.append(query_fasta)
+
+    # Write target FASTA and build DB
+    target_fasta = write_fasta(target_gene, prefix="target")
+    temp_files.append(target_fasta)
+
     logger.debug("Building BLAST database from %s", target_fasta)
     db_path, db_files = _make_blast_db(target_fasta)
+    temp_files.extend(db_files)
 
     # Run BLASTN
     output_tsv = Path(tempfile.mktemp(suffix=".tsv", prefix="blast_"))
-    cmd = _build_blastn_command(fragment_fasta, db_path, output_tsv, params)
+    cmd = _build_blastn_command(query_fasta, db_path, output_tsv, params)
+    temp_files.append(output_tsv)
 
     logger.debug("Running: %s", " ".join(cmd))
 
@@ -151,4 +226,4 @@ def align_fragments_blastn(
             f"blastn failed (exit {result.returncode}):\n{result.stderr}"
         )
 
-    return output_tsv, db_files
+    return output_tsv, temp_files
