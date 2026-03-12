@@ -7,7 +7,7 @@ from pathlib import Path
 import pysam
 import pytest
 
-from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene, _reverse_complement
+from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene
 from crossgene.models import GeneRecord
 
 TEST_DATA = Path(__file__).parent / "test_data"
@@ -80,13 +80,12 @@ class TestExtractSequence:
         assert len(gene.sequence) == 100
         assert gene.sequence == "ACGT" * 25
 
-    def test_minus_strand_revcomp(self, tiny_gtf, tiny_fasta):
+    def test_minus_strand_no_revcomp(self, tiny_gtf, tiny_fasta):
         gene = lookup_gene("GENE_B", tiny_gtf)
         gene = extract_sequence(gene, tiny_fasta)
         assert len(gene.sequence) == 100
-        # Original: AAAA * 25 = 100 A's
-        # Reverse complement of all A's = all T's
-        assert gene.sequence == "TTTT" * 25
+        # Genomic orientation: raw sequence is all A's
+        assert gene.sequence == "AAAA" * 25
 
 
 @pytest.fixture
@@ -182,12 +181,3 @@ class TestLoadFeatures:
         assert starts == sorted(starts)
 
 
-class TestReverseComplement:
-    @pytest.mark.parametrize("input_seq,expected", [
-        ("ACGT", "ACGT"),   # palindromic
-        ("AAAA", "TTTT"),
-        ("ATCG", "CGAT"),
-        ("acgt", "acgt"),   # lowercase
-    ])
-    def test_reverse_complement(self, input_seq, expected):
-        assert _reverse_complement(input_seq) == expected

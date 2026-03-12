@@ -10,7 +10,7 @@ COLUMNS = [
     "query_gene", "query_chrom", "query_start", "query_end",
     "target_gene", "target_chrom", "hit_start", "hit_end",
     "strand", "identity", "query_coverage", "evalue", "bitscore",
-    "mapq", "alignment_score", "is_primary", "direction",
+    "mapq", "is_primary", "direction",
 ]
 
 
@@ -41,7 +41,6 @@ def write_tsv(hits: list[AlignmentHit], output_path: str) -> None:
                 f"{h.evalue:.2e}",
                 f"{h.bitscore:.1f}",
                 h.mapq,
-                h.alignment_score,
                 str(h.is_primary).lower(),
                 h.direction,
             ])

@@ -30,17 +30,11 @@ def _local_to_genomic(
 ) -> tuple[int, int]:
     """Convert sequence-local coordinates to genomic coordinates.
 
-    The FASTA contains the sense sequence. For plus-strand genes,
-    local position 0 corresponds to gene.start. For minus-strand genes,
-    local position 0 corresponds to gene.end (the 5' end in sense
-    orientation), so we reverse-map.
+    The FASTA contains the genomic-orientation sequence, so local
+    position 0 always corresponds to gene.start regardless of strand.
     """
-    if gene.strand == "-":
-        genomic_end = gene.end - local_start
-        genomic_start = gene.end - local_end
-    else:
-        genomic_start = gene.start + local_start
-        genomic_end = gene.start + local_end
+    genomic_start = gene.start + local_start
+    genomic_end = gene.start + local_end
     return genomic_start, genomic_end
 
 
@@ -75,118 +69,113 @@ def parse_blast_gene_vs_gene(
     Returns:
         List of AlignmentHit objects passing all filters.
     """
-    lines: list[str] = []
+    hits: list[AlignmentHit] = []
+    max_bs = 0.0
+    hsp_count = 0
+
     with open(blast_tsv) as fh:
         for line in fh:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            lines.append(line)
 
-    if not lines:
-        logger.debug("Empty BLAST output: %s", blast_tsv)
-        return []
+            fields = line.split("\t")
+            if len(fields) < _NUM_COLUMNS:
+                logger.warning("Skipping malformed BLAST line: %s", line[:80])
+                continue
 
-    # First pass: find max bitscore for MAPQ normalization
-    max_bs = 0.0
-    for line in lines:
-        fields = line.split("\t")
-        if len(fields) < _NUM_COLUMNS:
-            continue
-        bs = float(fields[_COL_BITSCORE])
-        if bs > max_bs:
-            max_bs = bs
+            pident = float(fields[_COL_PIDENT])  # 0-100 from BLAST
+            identity = pident / 100.0
+            alignment_length = int(fields[_COL_LENGTH])
+            evalue = float(fields[_COL_EVALUE])
+            bitscore = float(fields[_COL_BITSCORE])
+            qlen = int(fields[_COL_QLEN])
+            query_coverage = alignment_length / qlen if qlen > 0 else 0.0
 
+            # Apply filters (except min_mapq, deferred to post-normalization)
+            if pident < min_quality:
+                continue
+            if alignment_length < min_length:
+                continue
+            if bitscore < min_bitscore:
+                continue
+            if evalue > max_evalue:
+                continue
+
+            if bitscore > max_bs:
+                max_bs = bitscore
+
+            # Query coords: BLAST qstart/qend are 1-based inclusive, always qstart < qend
+            qstart = int(fields[_COL_QSTART])
+            qend = int(fields[_COL_QEND])
+            q_local_start = qstart - 1  # 1-based → 0-based
+            q_local_end = qend           # inclusive → exclusive
+
+            # Target coords: BLAST sstart/send are 1-based inclusive
+            # sstart > send for minus strand hits
+            sstart = int(fields[_COL_SSTART])
+            send = int(fields[_COL_SEND])
+            sstrand = fields[_COL_SSTRAND]
+            blast_strand = "+" if sstrand == "plus" else "-"
+
+            # Derive relative strand (same-sense vs antisense).
+            # Both sequences are genomic orientation. BLAST "plus" means same
+            # genomic direction. Same-sense requires considering both genes' strands.
+            if query_gene.strand == target_gene.strand:
+                strand = blast_strand
+            else:
+                strand = "-" if blast_strand == "+" else "+"
+
+            if sstart <= send:
+                s_local_start = sstart - 1
+                s_local_end = send
+            else:
+                s_local_start = send - 1
+                s_local_end = sstart
+
+            # Primary: first HSP is primary, rest are secondary
+            is_primary = hsp_count == 0
+            hsp_count += 1
+
+            # Translate to genomic coordinates
+            query_genomic_start, query_genomic_end = _local_to_genomic(
+                query_gene, q_local_start, q_local_end
+            )
+            target_genomic_start, target_genomic_end = _local_to_genomic(
+                target_gene, s_local_start, s_local_end
+            )
+
+            hits.append(
+                AlignmentHit(
+                    query_chrom=query_gene.chrom,
+                    query_start=query_genomic_start,
+                    query_end=query_genomic_end,
+                    target_chrom=target_gene.chrom,
+                    target_start=target_genomic_start,
+                    target_end=target_genomic_end,
+                    strand=strand,
+                    identity=identity,
+                    query_coverage=query_coverage,
+                    mapq=0,  # placeholder, normalized below
+                    is_primary=is_primary,
+                    evalue=evalue,
+                    bitscore=bitscore,
+                    query_gene=query_gene.name,
+                    target_gene=target_gene.name,
+                    direction=direction,
+                )
+            )
+
+    # Normalize MAPQ and apply min_mapq filter
     if max_bs == 0:
         max_bs = 1.0
+    for h in hits:
+        h.mapq = min(60, int(h.bitscore / max_bs * 60))
+    if min_mapq > 0:
+        hits = [h for h in hits if h.mapq >= min_mapq]
 
-    # Second pass: build hits
-    hsp_count = 0  # track order for primary/secondary assignment
-    hits: list[AlignmentHit] = []
-
-    for line in lines:
-        fields = line.split("\t")
-        if len(fields) < _NUM_COLUMNS:
-            logger.warning("Skipping malformed BLAST line: %s", line[:80])
-            continue
-
-        pident = float(fields[_COL_PIDENT])  # 0-100 from BLAST
-        identity = pident / 100.0
-        alignment_length = int(fields[_COL_LENGTH])
-        evalue = float(fields[_COL_EVALUE])
-        bitscore = float(fields[_COL_BITSCORE])
-        qlen = int(fields[_COL_QLEN])
-        query_coverage = alignment_length / qlen if qlen > 0 else 0.0
-
-        # Apply filters
-        if pident < min_quality:
-            continue
-        if alignment_length < min_length:
-            continue
-        if bitscore < min_bitscore:
-            continue
-        if evalue > max_evalue:
-            continue
-
-        # Query coords: BLAST qstart/qend are 1-based inclusive, always qstart < qend
-        qstart = int(fields[_COL_QSTART])
-        qend = int(fields[_COL_QEND])
-        q_local_start = qstart - 1  # 1-based → 0-based
-        q_local_end = qend           # inclusive → exclusive
-
-        # Target coords: BLAST sstart/send are 1-based inclusive
-        # sstart > send for minus strand hits
-        sstart = int(fields[_COL_SSTART])
-        send = int(fields[_COL_SEND])
-        sstrand = fields[_COL_SSTRAND]
-        strand = "+" if sstrand == "plus" else "-"
-
-        if sstart <= send:
-            s_local_start = sstart - 1
-            s_local_end = send
-        else:
-            s_local_start = send - 1
-            s_local_end = sstart
-
-        # Derive pseudo-MAPQ from bitscore
-        mapq = min(60, int(bitscore / max_bs * 60))
-        if mapq < min_mapq:
-            continue
-
-        # Primary: first HSP is primary, rest are secondary
-        is_primary = hsp_count == 0
-        hsp_count += 1
-
-        # Translate to genomic coordinates
-        query_genomic_start, query_genomic_end = _local_to_genomic(
-            query_gene, q_local_start, q_local_end
-        )
-        target_genomic_start, target_genomic_end = _local_to_genomic(
-            target_gene, s_local_start, s_local_end
-        )
-
-        hits.append(
-            AlignmentHit(
-                query_chrom=query_gene.chrom,
-                query_start=query_genomic_start,
-                query_end=query_genomic_end,
-                target_chrom=target_gene.chrom,
-                target_start=target_genomic_start,
-                target_end=target_genomic_end,
-                strand=strand,
-                identity=identity,
-                query_coverage=query_coverage,
-                mapq=mapq,
-                cigar="",
-                alignment_score=int(bitscore),
-                is_primary=is_primary,
-                evalue=evalue,
-                bitscore=bitscore,
-                query_gene=query_gene.name,
-                target_gene=target_gene.name,
-                direction=direction,
-            )
-        )
+    if not hits:
+        logger.debug("Empty BLAST output: %s", blast_tsv)
 
     logger.debug(
         "Parsed %d HSPs from %s (passing all filters)",

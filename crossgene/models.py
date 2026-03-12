@@ -24,7 +24,6 @@ class GeneFeature:
     feature_type: str  # "exon", "CDS", "UTR", etc.
     start: int  # genomic start (0-based)
     end: int  # genomic end
-    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -37,7 +36,7 @@ class GeneRecord:
     start: int  # genomic start (0-based)
     end: int  # genomic end
     strand: str  # '+' or '-' (original strand from GTF)
-    sequence: str = ""  # sense sequence (revcomp applied if minus strand)
+    sequence: str = ""  # genomic-orientation sequence
     features: list[GeneFeature] = field(default_factory=list)
     gene_body_start: int = -1  # original gene start before flanking (-1 = not set)
     gene_body_end: int = -1  # original gene end before flanking (-1 = not set)
@@ -62,8 +61,6 @@ class AlignmentHit:
     identity: float  # 0.0 - 1.0
     query_coverage: float  # 0.0 - 1.0, fraction of query that aligned
     mapq: int  # mapping quality (pseudo-MAPQ from bitscore)
-    cigar: str  # CIGAR string
-    alignment_score: int  # AS tag value or bitscore
     is_primary: bool  # primary vs secondary alignment
     evalue: float = 0.0  # BLAST E-value
     bitscore: float = 0.0  # BLAST bitscore
@@ -72,3 +69,14 @@ class AlignmentHit:
     query_gene: str = ""  # gene name of query
     target_gene: str = ""  # gene name of target
     direction: str = ""  # "A→B" or "B→A"
+
+
+@dataclass
+class FilterParams:
+    """Filter thresholds for alignment hits."""
+
+    min_quality: float = 30
+    min_mapq: int = 0
+    min_length: int = 25
+    min_bitscore: float = 0.0
+    max_evalue: float = float("inf")

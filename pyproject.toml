@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crossgene"
-version = "0.1.0"
+version = "0.1.1"
 description = "Compare two gene sequences via fragment alignment and produce similarity profiles"
 requires-python = ">=3.10"
 dependencies = [

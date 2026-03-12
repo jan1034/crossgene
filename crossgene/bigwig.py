@@ -30,7 +30,7 @@ def write_bigwig(
     scores: np.ndarray,
     chrom: str,
     start: int,
-    chrom_sizes_path: str,
+    chrom_sizes: dict[str, int],
     output_path: str,
 ) -> None:
     """Write per-base scores as a BigWig file with genomic coordinates.
@@ -42,10 +42,9 @@ def write_bigwig(
         scores: Per-base score array (0-100), length = gene.end - gene.start.
         chrom: Chromosome name (e.g. "chr17").
         start: Genomic start position (0-based).
-        chrom_sizes_path: Path to chrom.sizes file.
+        chrom_sizes: Dict of {chrom: length}.
         output_path: Output BigWig file path.
     """
-    chrom_sizes = read_chrom_sizes(chrom_sizes_path)
 
     if chrom not in chrom_sizes:
         raise ValueError(

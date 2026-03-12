@@ -1,0 +1,16 @@
+{
+  "sensitivity": {
+    "1": {"word_size": 7,  "reward": 1, "penalty": -1, "gapopen": 2, "gapextend": 1, "evalue": 10},
+    "2": {"word_size": 7,  "reward": 1, "penalty": -1, "gapopen": 2, "gapextend": 1, "evalue": 1},
+    "3": {"word_size": 11, "reward": 1, "penalty": -2, "gapopen": 1, "gapextend": 1, "evalue": 0.01},
+    "4": {"word_size": 13, "reward": 1, "penalty": -3, "gapopen": 1, "gapextend": 2, "evalue": 0.001},
+    "5": {"word_size": 15, "reward": 1, "penalty": -4, "gapopen": 1, "gapextend": 2, "evalue": 0.001}
+  },
+  "stringency": {
+    "1": {"min_quality": 0,  "min_mapq": 0, "min_length": 15, "min_bitscore": 0.0, "max_evalue": "inf"},
+    "2": {"min_quality": 15, "min_mapq": 0, "min_length": 20, "min_bitscore": 0.0, "max_evalue": "inf"},
+    "3": {"min_quality": 30, "min_mapq": 0, "min_length": 25, "min_bitscore": 0.0, "max_evalue": "inf"},
+    "4": {"min_quality": 50, "min_mapq": 3, "min_length": 40, "min_bitscore": 30.0, "max_evalue": 0.01},
+    "5": {"min_quality": 70, "min_mapq": 5, "min_length": 50, "min_bitscore": 50.0, "max_evalue": 0.001}
+  }
+}

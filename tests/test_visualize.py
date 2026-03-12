@@ -24,12 +24,12 @@ def _make_gene(name, chrom, start, end, strand="+", features=None):
     )
 
 
-def _make_hit(q_start, q_end, t_start, t_end, strand="+", mapq=40, score=90):
+def _make_hit(q_start, q_end, t_start, t_end, strand="+", mapq=40, bitscore=90.0):
     return AlignmentHit(
         query_chrom="chr1", query_start=q_start, query_end=q_end,
         target_chrom="chr2", target_start=t_start, target_end=t_end,
-        strand=strand, identity=0.9, query_coverage=1.0, mapq=mapq, cigar="50M",
-        alignment_score=score, is_primary=True,
+        strand=strand, identity=0.9, query_coverage=1.0, mapq=mapq,
+        is_primary=True, bitscore=bitscore,
         query_gene="GENE_A", target_gene="GENE_B", direction="A→B",
     )
 
@@ -49,10 +49,10 @@ class TestHelpers:
         assert _identity_to_alpha(1.0, 1000) == pytest.approx(0.1)
 
     def test_subsample(self):
-        hits = [_make_hit(0, 50, 0, 50, score=i) for i in range(10)]
+        hits = [_make_hit(0, 50, 0, 50, bitscore=float(i)) for i in range(10)]
         result = _subsample_hits(hits, 3)
         assert len(result) == 3
-        assert result[0].alignment_score == 9  # top scores kept
+        assert result[0].bitscore == 9.0  # top scores kept
 
         # Under limit: no change
         assert len(_subsample_hits(hits[:3], 5)) == 3
@@ -71,7 +71,7 @@ class TestCreateCirclizePlot:
         assert os.path.getsize(output) > 0
 
     def test_with_features(self, tmp_path):
-        features_a = [GeneFeature("exon", 100, 200, {}), GeneFeature("CDS", 150, 200, {})]
+        features_a = [GeneFeature("exon", 100, 200), GeneFeature("CDS", 150, 200)]
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
         output = str(tmp_path / "test.pdf")
@@ -96,7 +96,7 @@ class TestLegend:
 
     def test_legend_entries(self, tmp_path):
         """Legend has alignment entries; feature entries only when drawn."""
-        features_a = [GeneFeature("exon", 100, 200, {})]
+        features_a = [GeneFeature("exon", 100, 200)]
         gene_a = _make_gene("GENE_A", "chr1", 0, 1000, "+", features=features_a)
         gene_b = _make_gene("GENE_B", "chr2", 0, 800, "-")
         hits = [_make_hit(100, 150, 200, 250)]

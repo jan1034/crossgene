@@ -6,10 +6,11 @@ import logging
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from crossgene.models import BedRegion, GeneRecord
+from crossgene.presets import get_sensitivity_preset
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,7 @@ class BlastParams:
     """Parameters for BLASTN alignment."""
 
     max_secondary: int = 10  # maps to max_target_seqs / max_hsps
-    moderate: bool = False
-    sensitive: bool = False
-    divergent: bool = False
+    sensitivity: int = 3  # 1 (most sensitive) to 5 (strictest)
 
 
 def check_blastn() -> None:
@@ -48,13 +47,18 @@ def write_fasta(gene: GeneRecord, prefix: str = "gene") -> Path:
     return Path(tmp.name)
 
 
-def mask_sequence(sequence: str, regions: list[BedRegion], gene_start: int) -> str:
+def mask_sequence(
+    sequence: str, regions: list[BedRegion], gene_start: int,
+) -> str:
     """Replace blacklisted regions with N's in the gene sequence.
 
+    Regions are in genomic coordinates, already filtered/clipped to gene bounds.
+    The sequence is in genomic orientation, so local position 0 = gene_start.
+
     Args:
-        sequence: Gene sequence string.
+        sequence: Gene sequence string (genomic orientation).
         regions: BedRegions already filtered/clipped to gene bounds.
-        gene_start: Genomic start of the gene (for coordinate offset).
+        gene_start: Genomic start of the gene (0-based).
 
     Returns:
         Masked sequence with N's replacing blacklisted bases.
@@ -80,47 +84,19 @@ def _build_blastn_command(
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen "
                    "qstart qend sstart send evalue bitscore qlen slen sstrand",
         "-max_target_seqs", str(params.max_secondary),
-        "-max_hsps", str(params.max_secondary),
         "-dust", "yes",
         "-soft_masking", "false",
     ]
 
-    if params.divergent:
-        cmd.extend([
-            "-word_size", "7",
-            "-reward", "1",
-            "-penalty", "-1",
-            "-gapopen", "2",
-            "-gapextend", "1",
-            "-evalue", "10",
-        ])
-    elif params.sensitive:
-        cmd.extend([
-            "-word_size", "7",
-            "-reward", "1",
-            "-penalty", "-1",
-            "-gapopen", "2",
-            "-gapextend", "1",
-            "-evalue", "1",
-        ])
-    elif params.moderate:
-        cmd.extend([
-            "-word_size", "11",
-            "-reward", "1",
-            "-penalty", "-2",
-            "-gapopen", "1",
-            "-gapextend", "1",
-            "-evalue", "0.01",
-        ])
-    else:
-        cmd.extend([
-            "-word_size", "15",
-            "-reward", "1",
-            "-penalty", "-4",
-            "-gapopen", "1",
-            "-gapextend", "2",
-            "-evalue", "1e-3",
-        ])
+    preset = get_sensitivity_preset(params.sensitivity)
+    cmd.extend([
+        "-word_size", str(preset["word_size"]),
+        "-reward", str(preset["reward"]),
+        "-penalty", str(preset["penalty"]),
+        "-gapopen", str(preset["gapopen"]),
+        "-gapextend", str(preset["gapextend"]),
+        "-evalue", str(preset["evalue"]),
+    ])
 
     return cmd
 
@@ -182,17 +158,9 @@ def align_genes(
     # Write query FASTA (with optional blacklist masking)
     if blacklist_regions:
         masked_seq = mask_sequence(
-            query_gene.sequence, blacklist_regions, query_gene.start
+            query_gene.sequence, blacklist_regions, query_gene.start,
         )
-        # Create a temporary gene record with masked sequence for FASTA writing
-        masked_gene = GeneRecord(
-            name=query_gene.name, gene_id=query_gene.gene_id,
-            chrom=query_gene.chrom, start=query_gene.start, end=query_gene.end,
-            strand=query_gene.strand, sequence=masked_seq,
-            features=query_gene.features,
-            gene_body_start=query_gene.gene_body_start,
-            gene_body_end=query_gene.gene_body_end,
-        )
+        masked_gene = replace(query_gene, sequence=masked_seq)
         query_fasta = write_fasta(masked_gene, prefix="query")
         n_count = sum(1 for a, b in zip(query_gene.sequence, masked_seq) if a != b)
         logger.info("Blacklist: masked %d bases in %s query sequence", n_count, query_gene.name)

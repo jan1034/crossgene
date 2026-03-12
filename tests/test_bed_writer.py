@@ -26,7 +26,7 @@ def _make_hit(
         query_chrom="chr1", query_start=query_start, query_end=query_end,
         target_chrom="chr2", target_start=target_start, target_end=target_end,
         strand=strand, identity=identity, query_coverage=1.0, mapq=60,
-        cigar="50M", alignment_score=100, is_primary=is_primary,
+        is_primary=is_primary,
         query_gene="GENEA", target_gene="GENEB", direction="A→B",
     )
 
@@ -92,11 +92,11 @@ class TestTrackHeaderAndFilters:
 
         q_bed, _ = write_hit_beds(hits, _make_gene(), _make_gene("GENEB"), "AtoB", str(tmp_path))
         _, rows = _parse_bed(q_bed)
-        assert len(rows) == 1  # default: primary only
+        assert len(rows) == 2  # default: all hits
 
-        q_bed2, _ = write_hit_beds(hits, _make_gene(), _make_gene("GENEB"), "AtoB", str(tmp_path), primary_only=False)
+        q_bed2, _ = write_hit_beds(hits, _make_gene(), _make_gene("GENEB"), "AtoB", str(tmp_path), primary_only=True)
         _, rows2 = _parse_bed(q_bed2)
-        assert len(rows2) == 2
+        assert len(rows2) == 1
 
 
 class TestEdgeCases:

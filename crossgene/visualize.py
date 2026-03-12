@@ -69,14 +69,14 @@ def _identity_to_alpha(identity: float, num_hits: int) -> float:
 def _subsample_hits(
     hits: list[AlignmentHit], max_arcs: int
 ) -> list[AlignmentHit]:
-    """Keep top max_arcs hits by alignment_score if over limit."""
+    """Keep top max_arcs hits by bitscore if over limit."""
     if len(hits) <= max_arcs:
         return hits
     logger.info(
-        "Subsampling arcs: %d -> %d (keeping top by alignment_score)",
+        "Subsampling arcs: %d -> %d (keeping top by bitscore)",
         len(hits), max_arcs,
     )
-    return sorted(hits, key=lambda h: h.alignment_score, reverse=True)[:max_arcs]
+    return sorted(hits, key=lambda h: h.bitscore, reverse=True)[:max_arcs]
 
 
 def create_circlize_plot(
@@ -197,11 +197,14 @@ def create_circlize_plot(
         b_local_start = hit.target_start - gene_b.start
         b_local_end = hit.target_end - gene_b.start
 
-        # Clamp to sector bounds
-        a_local_start = max(0, min(a_local_start, gene_a_len))
-        a_local_end = max(0, min(a_local_end, gene_a_len))
-        b_local_start = max(0, min(b_local_start, gene_b_len))
-        b_local_end = max(0, min(b_local_end, gene_b_len))
+        if not (0 <= a_local_start <= a_local_end <= gene_a_len):
+            logger.warning("Hit coords out of bounds for %s: [%d, %d) in gene len %d — skipping",
+                           gene_a.name, a_local_start, a_local_end, gene_a_len)
+            continue
+        if not (0 <= b_local_start <= b_local_end <= gene_b_len):
+            logger.warning("Hit coords out of bounds for %s: [%d, %d) in gene len %d — skipping",
+                           gene_b.name, b_local_start, b_local_end, gene_b_len)
+            continue
 
         color = COLOR_ANTISENSE if hit.strand == "-" else COLOR_SAME_SENSE
         alpha = _identity_to_alpha(hit.identity, len(hits_ab))

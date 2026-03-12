@@ -40,10 +40,11 @@ class TestCheckBlastn:
 
 class TestBuildBlastnCommand:
     @pytest.mark.parametrize("params,expected_word_size,expected_evalue", [
-        (BlastParams(), "15", "1e-3"),
-        (BlastParams(sensitive=True), "7", "1"),
-        (BlastParams(divergent=True), "7", "10"),
-        (BlastParams(moderate=True), "11", "0.01"),
+        (BlastParams(sensitivity=1), "7", "10"),
+        (BlastParams(sensitivity=2), "7", "1"),
+        (BlastParams(sensitivity=3), "11", "0.01"),
+        (BlastParams(sensitivity=4), "13", "0.001"),
+        (BlastParams(sensitivity=5), "15", "0.001"),
     ])
     def test_preset_params(self, tmp_path, params, expected_word_size, expected_evalue):
         cmd = _build_blastn_command(tmp_path / "q.fa", tmp_path / "db", tmp_path / "out.tsv", params)

@@ -10,12 +10,15 @@ from pathlib import Path
 import click
 
 from crossgene import __version__
-from crossgene.bigwig import write_bigwig
+from crossgene.bigwig import read_chrom_sizes, write_bigwig
 from crossgene.blastn import BlastParams, align_genes, check_blastn
+from crossgene.models import FilterParams
+from crossgene.presets import get_stringency_preset
 from crossgene.gene_extractor import extract_sequence, load_features, lookup_gene
 from crossgene.parser_blast import parse_blast_gene_vs_gene
 from crossgene.scores import compute_scores
 from crossgene.tsv_writer import write_tsv
+from crossgene.bed_writer import write_hit_beds
 from crossgene.bed_parser import filter_and_clip, parse_bed
 from crossgene.visualize import BED_COLORS, BedTrackConfig, create_circlize_plot
 
@@ -43,10 +46,9 @@ def _parse_formats(output_formats: str) -> set[str]:
 
 
 def _run_direction(
-    query_gene, target_gene, min_quality, blast_params,
+    query_gene, target_gene, blast_params, filters: FilterParams,
     chrom_sizes, outdir, formats, direction_label,
-    min_mapq=0, blacklist_regions=None, bed_all_hits=False,
-    min_length=25, min_bitscore=0.0, max_evalue=float("inf"),
+    blacklist_regions=None, bed_primary_only=False,
 ) -> tuple[list, list[Path]]:
     """Run one direction of the gene-vs-gene BLAST pipeline."""
     logger.info(
@@ -66,11 +68,11 @@ def _run_direction(
     # Parse HSPs
     hits = parse_blast_gene_vs_gene(
         tsv_path, query_gene, target_gene,
-        min_quality, direction_label,
-        min_mapq=min_mapq,
-        min_length=min_length,
-        min_bitscore=min_bitscore,
-        max_evalue=max_evalue,
+        filters.min_quality, direction_label,
+        min_mapq=filters.min_mapq,
+        min_length=filters.min_length,
+        min_bitscore=filters.min_bitscore,
+        max_evalue=filters.max_evalue,
     )
 
     logger.info("Found %d HSPs passing filters", len(hits))
@@ -94,12 +96,10 @@ def _run_direction(
         logger.info("Wrote TSV: %s (%d rows)", tsv_out, len(hits))
 
     if "bed" in formats:
-        from crossgene.bed_writer import write_hit_beds
-
         dir_tag = "AtoB" if direction_label == "A→B" else "BtoA"
         write_hit_beds(
             hits, query_gene, target_gene, dir_tag, outdir,
-            primary_only=not bed_all_hits,
+            primary_only=bed_primary_only,
         )
 
     return hits, temp_files
@@ -115,29 +115,27 @@ def _run_direction(
 @click.option("--chrom-sizes", default="references/homo_sapiens.109.chrom.sizes", show_default=True, help="Chromosome sizes file")
 @click.option("--outdir", default=".", show_default=True, help="Output directory")
 @click.option("--output-formats", default="bigwig,tsv,plot,bed", show_default=True, help="Comma-separated: bigwig,tsv,plot,bed")
-@click.option("--moderate", is_flag=True, default=False, help="Tune BLASTN for mild divergence")
-@click.option("--sensitive", is_flag=True, default=False, help="Tune BLASTN for moderate divergence")
-@click.option("--divergent", is_flag=True, default=False, help="Tune BLASTN for high divergence / paralogs")
+@click.option("--sensitivity", default=3, show_default=True, type=click.IntRange(1, 5), help="BLAST sensitivity level (1=most sensitive, 5=strictest)")
+@click.option("--stringency", default=3, show_default=True, type=click.IntRange(1, 5), help="Post-alignment filtering stringency (1=most permissive, 5=strictest)")
 @click.option("--annotation-gtf", default="references/homo_sapiens.109.mainChr.gtf", show_default=True, help="Annotation GTF with sub-gene features (exon, CDS, etc.)")
 @click.option("--annotation-features", default="exon,CDS", show_default=True, help="Comma-separated feature types to load from annotation GTF")
 @click.option("--transcript-mode", default="canonical", show_default=True, type=click.Choice(["canonical", "all"]), help="Transcript selection: canonical (Ensembl_canonical) or all")
 @click.option("--flanking", default=2000, show_default=True, help="Flanking region size in bp (upstream + downstream)")
-@click.option("--strict", is_flag=True, default=False, help="Strict mode: fewer hits (max_secondary=1, min_quality=70, min_mapq=5)")
 @click.option("--min-mapq", default=0, show_default=True, help="Minimum pseudo-MAPQ (derived from bitscore) to report a hit")
 @click.option("--min-length", default=25, show_default=True, help="Minimum HSP alignment length to report")
 @click.option("--min-bitscore", default=0.0, show_default=True, help="Minimum bitscore to report a hit")
 @click.option("--max-evalue", default=float("inf"), show_default=True, help="Maximum E-value to report a hit")
 @click.option("--blacklist", default=None, type=click.Path(exists=True), help="BED file of regions to mask with N's before alignment.")
-@click.option("--bed-all-hits", is_flag=True, default=False, help="Include secondary HSPs in hit BED export (default: primary only).")
+@click.option("--bed-primary-only", is_flag=True, default=False, help="Only include primary HSP in hit BED export (default: all hits).")
 @click.option("--bed", "bed_files", multiple=True, type=click.Path(exists=True), help="BED file for annotation overlay on circular plot (repeatable, max 3).")
 @click.option("--bed-color", "bed_colors", multiple=True, type=str, help="Color for corresponding --bed file (default: auto-assigned).")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging")
 @click.pass_context
 def main(ctx, gene_a, gene_b, min_quality, max_secondary,
          genome, genes_gtf, chrom_sizes, outdir, output_formats,
-         moderate, sensitive, divergent, annotation_gtf, annotation_features, transcript_mode,
-         flanking, strict, min_mapq, min_length, min_bitscore, max_evalue,
-         blacklist, bed_all_hits,
+         sensitivity, stringency, annotation_gtf, annotation_features, transcript_mode,
+         flanking, min_mapq, min_length, min_bitscore, max_evalue,
+         blacklist, bed_primary_only,
          bed_files, bed_colors, verbose):
     """Compare two gene sequences using BLASTN.
 
@@ -149,18 +147,20 @@ def main(ctx, gene_a, gene_b, min_quality, max_secondary,
     _setup_logging(verbose)
     logger.info("crossgene v%s", __version__)
 
-    # Apply --strict overrides for parameters the user didn't explicitly set
-    if strict:
-        if ctx.get_parameter_source("max_secondary") == click.core.ParameterSource.DEFAULT:
-            max_secondary = 1
-        if ctx.get_parameter_source("min_quality") == click.core.ParameterSource.DEFAULT:
-            min_quality = 70
-        if ctx.get_parameter_source("min_mapq") == click.core.ParameterSource.DEFAULT:
-            min_mapq = 5
-        logger.info(
-            "Strict mode: max_secondary=%d, min_quality=%d, min_mapq=%d",
-            max_secondary, min_quality, min_mapq,
-        )
+    # Load stringency preset, then override with explicitly-provided CLI filter flags
+    stringency_preset = get_stringency_preset(stringency)
+    if ctx.get_parameter_source("min_quality") == click.core.ParameterSource.DEFAULT:
+        min_quality = stringency_preset["min_quality"]
+    if ctx.get_parameter_source("min_mapq") == click.core.ParameterSource.DEFAULT:
+        min_mapq = stringency_preset["min_mapq"]
+    if ctx.get_parameter_source("min_length") == click.core.ParameterSource.DEFAULT:
+        min_length = stringency_preset["min_length"]
+    if ctx.get_parameter_source("min_bitscore") == click.core.ParameterSource.DEFAULT:
+        min_bitscore = stringency_preset["min_bitscore"]
+    if ctx.get_parameter_source("max_evalue") == click.core.ParameterSource.DEFAULT:
+        max_evalue = stringency_preset["max_evalue"]
+
+    logger.info("Sensitivity=%d, Stringency=%d", sensitivity, stringency)
 
     # Validate BED options
     if len(bed_files) > 3:
@@ -186,6 +186,9 @@ def main(ctx, gene_a, gene_b, min_quality, max_secondary,
 
     # Create output directory
     os.makedirs(outdir, exist_ok=True)
+
+    # Parse chrom sizes once (used by BigWig writer)
+    chrom_sizes_dict = read_chrom_sizes(chrom_sizes)
 
     # Extract genes
     logger.info("Looking up genes...")
@@ -224,15 +227,17 @@ def main(ctx, gene_a, gene_b, min_quality, max_secondary,
         blacklist_all = parse_bed(blacklist)
         logger.info("Blacklist: loaded %d regions from %s", len(blacklist_all), blacklist)
 
-    mode_count = sum([moderate, sensitive, divergent])
-    if mode_count > 1:
-        raise click.ClickException("--moderate, --sensitive, and --divergent are mutually exclusive")
-
     blast_params = BlastParams(
         max_secondary=max_secondary,
-        moderate=moderate,
-        sensitive=sensitive,
-        divergent=divergent,
+        sensitivity=sensitivity,
+    )
+
+    filters = FilterParams(
+        min_quality=min_quality,
+        min_mapq=min_mapq,
+        min_length=min_length,
+        min_bitscore=min_bitscore,
+        max_evalue=max_evalue,
     )
 
     all_temp_files: list[Path] = []
@@ -254,21 +259,19 @@ def main(ctx, gene_a, gene_b, min_quality, max_secondary,
 
     # Direction A→B
     hits_ab, temps = _run_direction(
-        rec_a, rec_b, min_quality, blast_params,
-        chrom_sizes, outdir, formats, "A→B",
-        min_mapq=min_mapq, blacklist_regions=blacklist_a,
-        bed_all_hits=bed_all_hits,
-        min_length=min_length, min_bitscore=min_bitscore, max_evalue=max_evalue,
+        rec_a, rec_b, blast_params, filters,
+        chrom_sizes_dict, outdir, formats, "A→B",
+        blacklist_regions=blacklist_a,
+        bed_primary_only=bed_primary_only,
     )
     all_temp_files.extend(temps)
 
     # Direction B→A
     hits_ba, temps = _run_direction(
-        rec_b, rec_a, min_quality, blast_params,
-        chrom_sizes, outdir, formats, "B→A",
-        min_mapq=min_mapq, blacklist_regions=blacklist_b,
-        bed_all_hits=bed_all_hits,
-        min_length=min_length, min_bitscore=min_bitscore, max_evalue=max_evalue,
+        rec_b, rec_a, blast_params, filters,
+        chrom_sizes_dict, outdir, formats, "B→A",
+        blacklist_regions=blacklist_b,
+        bed_primary_only=bed_primary_only,
     )
     all_temp_files.extend(temps)
 

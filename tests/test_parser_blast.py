@@ -85,7 +85,7 @@ class TestFilters:
 class TestCoordinateTranslation:
     @pytest.mark.parametrize("gene_strand,qstart,qend,expected_start,expected_end", [
         ("+", "51", "250", 1050, 1250),   # plus strand query
-        ("-", "51", "250", 1750, 1950),   # minus strand query
+        ("-", "51", "250", 1050, 1250),   # minus strand query (genomic orientation, same mapping)
     ])
     def test_query_coords(self, tmp_path, gene_strand, qstart, qend, expected_start, expected_end):
         tsv = tmp_path / "test.tsv"
@@ -98,8 +98,8 @@ class TestCoordinateTranslation:
         assert hits[0].query_end == expected_end
 
     @pytest.mark.parametrize("gene_strand,sstart,send,sstrand,expected_start,expected_end,expected_strand", [
-        ("+", "101", "300", "plus", 5100, 5300, "+"),    # plus target, plus hit
-        ("-", "101", "300", "plus", 5700, 5900, "+"),    # minus target
+        ("+", "101", "300", "plus", 5100, 5300, "+"),    # plus target, plus hit → same-sense
+        ("-", "101", "300", "plus", 5100, 5300, "-"),    # minus target, plus hit → antisense (query+ target-)
         ("+", "300", "101", "minus", 5100, 5300, "-"),   # minus strand BLAST hit
     ])
     def test_target_coords(self, tmp_path, gene_strand, sstart, send, sstrand,

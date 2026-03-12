@@ -77,7 +77,7 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, [
             "--gene-a", "SYNTH_A", "--gene-b", "SYNTH_B",
-            "--min-quality", "30", "--divergent", "--flanking", "0",
+            "--min-quality", "30", "--sensitivity", "1", "--flanking", "0",
             "--genes-gtf", str(gtf), "--genome", str(genome),
             "--chrom-sizes", str(chrom_sizes), "--outdir", str(outdir),
             "--output-formats", "bigwig,tsv,plot",
@@ -115,7 +115,7 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, [
             "--gene-a", "SYNTH_A", "--gene-b", "SYNTH_B",
-            "--min-quality", "30", "--divergent", "--flanking", "0",
+            "--min-quality", "30", "--sensitivity", "1", "--flanking", "0",
             "--genes-gtf", str(gtf), "--genome", str(genome),
             "--chrom-sizes", str(chrom_sizes), "--outdir", str(outdir),
             "--output-formats", "tsv", "--blacklist", str(blacklist),
