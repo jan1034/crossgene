@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 import gtfparse
 import pysam
@@ -10,12 +11,6 @@ import pysam
 from crossgene.models import GeneFeature, GeneRecord
 
 logger = logging.getLogger(__name__)
-
-
-def _reverse_complement(seq: str) -> str:
-    """Return the reverse complement of a DNA sequence."""
-    complement = str.maketrans("ACGTacgt", "TGCAtgca")
-    return seq.translate(complement)[::-1]
 
 
 def lookup_gene(gene_name: str, gtf_path: str) -> GeneRecord:
@@ -57,24 +52,7 @@ def lookup_gene(gene_name: str, gtf_path: str) -> GeneRecord:
     # Convert GTF 1-based inclusive to 0-based half-open
     start_0based = int(gene_row["start"]) - 1
     end_0based = int(gene_row["end"])
-
-    # Extract sub-gene features (exon, CDS, UTR, etc.) if available
-    features = []
     gene_id = str(gene_row["gene_id"])
-    sub_features = df[
-        (df["gene_id"] == gene_id) & (df["feature"] != "gene")
-    ]
-    for _, feat_row in sub_features.iterrows():
-        feature_type = str(feat_row["feature"])
-        if feature_type in ("exon", "CDS", "five_prime_utr", "three_prime_utr"):
-            features.append(
-                GeneFeature(
-                    feature_type=feature_type,
-                    start=int(feat_row["start"]) - 1,  # 0-based
-                    end=int(feat_row["end"]),
-                    metadata={},
-                )
-            )
 
     return GeneRecord(
         name=gene_name,
@@ -84,7 +62,6 @@ def lookup_gene(gene_name: str, gtf_path: str) -> GeneRecord:
         end=end_0based,
         strand=str(gene_row["strand"]),
         sequence="",
-        features=sorted(features, key=lambda f: f.start),
     )
 
 
@@ -158,7 +135,7 @@ def load_features(
         key = (ft, start, end)
         if key not in seen:
             seen.add(key)
-            features.append(GeneFeature(feature_type=ft, start=start, end=end, metadata={}))
+            features.append(GeneFeature(feature_type=ft, start=start, end=end))
 
     features.sort(key=lambda f: f.start)
     logger.info(
@@ -168,26 +145,15 @@ def load_features(
         gene.name,
     )
 
-    return GeneRecord(
-        name=gene.name,
-        gene_id=gene.gene_id,
-        chrom=gene.chrom,
-        start=gene.start,
-        end=gene.end,
-        strand=gene.strand,
-        sequence=gene.sequence,
-        features=features,
-        gene_body_start=gene.gene_body_start,
-        gene_body_end=gene.gene_body_end,
-    )
+    return replace(gene, features=features)
 
 
 def extract_sequence(gene: GeneRecord, genome_path: str, flanking: int = 0) -> GeneRecord:
     """Extract the gene sequence from a genome FASTA.
 
     Fetches chrom:start-end using pysam (0-based half-open coords).
-    For minus-strand genes, reverse-complements the sequence to produce
-    the sense strand.
+    The sequence is always in genomic orientation (no reverse-complement).
+    BLAST handles strandedness natively.
 
     If flanking > 0, expands the extraction region by that many bp
     upstream and downstream (clamped to chromosome bounds). The original
@@ -217,18 +183,6 @@ def extract_sequence(gene: GeneRecord, genome_path: str, flanking: int = 0) -> G
     finally:
         fa.close()
 
-    if gene.strand == "-":
-        seq = _reverse_complement(seq)
-
-    return GeneRecord(
-        name=gene.name,
-        gene_id=gene.gene_id,
-        chrom=gene.chrom,
-        start=flanked_start,
-        end=flanked_end,
-        strand=gene.strand,
-        sequence=seq,
-        features=gene.features,
-        gene_body_start=gene_body_start,
-        gene_body_end=gene_body_end,
-    )
+    return replace(gene, start=flanked_start, end=flanked_end,
+                   sequence=seq, gene_body_start=gene_body_start,
+                   gene_body_end=gene_body_end)
